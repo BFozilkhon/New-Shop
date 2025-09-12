@@ -1,0 +1,171 @@
+---
+globs: .go
+alwaysApply: false
+---
+
+4. Go + Fiber Backend Rules
+
+Project Structure:
+"
+backend/
+├── cmd/
+│   └── server/
+│       └── main.go
+├── internal/
+│   ├── config/
+│   ├── handlers/
+│   ├── middleware/
+│   ├── models/
+│   ├── repositories/
+│   ├── services/
+│   └── utils/
+├── pkg/
+├── migrations/
+└── docker/
+"
+
+Handler Rules:
+1. Always use dependency injection
+2. Always validate request data
+3. Always return consistent response format
+4. Never put business logic in handlers
+
+"
+go// internal/handlers/driver_handler.go
+package handlers
+
+import (
+    "github.com/gofiber/fiber/v2"
+    "your-project/internal/models"
+    "your-project/internal/services"
+    "your-project/internal/utils"
+)
+
+type DriverHandler struct {
+    driverService services.DriverService
+}
+
+func NewDriverHandler(driverService services.DriverService) *DriverHandler {
+    return &DriverHandler{
+        driverService: driverService,
+    }
+}
+
+func (h *DriverHandler) GetDrivers(c *fiber.Ctx) error {
+    // Always parse and validate query parameters
+    var params models.DriverQueryParams
+    if err := c.QueryParser(&params); err != nil {
+        return utils.ErrorResponse(c, fiber.StatusBadRequest, "Invalid query parameters", err)
+    }
+
+    // Always validate using validator
+    if err := utils.ValidateStruct(params); err != nil {
+        return utils.ValidationErrorResponse(c, err)
+    }
+
+    drivers, total, err := h.driverService.GetDrivers(c.Context(), params)
+    if err != nil {
+        return utils.ErrorResponse(c, fiber.StatusInternalServerError, "Failed to get drivers", err)
+    }
+
+    return utils.PaginatedResponse(c, drivers, total, params.Page, params.Limit)
+}
+
+func (h *DriverHandler) CreateDriver(c *fiber.Ctx) error {
+    var req models.CreateDriverRequest
+    
+    // Always parse and validate request body
+    if err := c.BodyParser(&req); err != nil {
+        return utils.ErrorResponse(c, fiber.StatusBadRequest, "Invalid request body", err)
+    }
+
+    if err := utils.ValidateStruct(req); err != nil {
+        return utils.ValidationErrorResponse(c, err)
+    }
+
+    driver, err := h.driverService.CreateDriver(c.Context(), req)
+    if err != nil {
+        return utils.ErrorResponse(c, fiber.StatusInternalServerError, "Failed to create driver", err)
+    }
+
+    return utils.SuccessResponse(c, fiber.StatusCreated, "Driver created successfully", driver)
+}
+"
+
+Response Utility Rules:
+"
+go// internal/utils/response.go
+package utils
+
+import (
+    "github.com/gofiber/fiber/v2"
+)
+
+type APIResponse struct {
+    Success bool        `json:"success"`
+    Message string      `json:"message"`
+    Data    interface{} `json:"data,omitempty"`
+    Error   string      `json:"error,omitempty"`
+}
+
+type PaginatedAPIResponse struct {
+    Success    bool        `json:"success"`
+    Message    string      `json:"message"`
+    Data       interface{} `json:"data"`
+    Pagination Pagination  `json:"pagination"`
+}
+
+type Pagination struct {
+    Page       int   `json:"page"`
+    Limit      int   `json:"limit"`
+    Total      int64 `json:"total"`
+    TotalPages int   `json:"total_pages"`
+}
+
+// Always use consistent response format
+func SuccessResponse(c *fiber.Ctx, statusCode int, message string, data interface{}) error {
+    return c.Status(statusCode).JSON(APIResponse{
+        Success: true,
+        Message: message,
+        Data:    data,
+    })
+}
+
+func ErrorResponse(c *fiber.Ctx, statusCode int, message string, err error) error {
+    response := APIResponse{
+        Success: false,
+        Message: message,
+    }
+    
+    if err != nil {
+        response.Error = err.Error()
+    }
+    
+    return c.Status(statusCode).JSON(response)
+}
+"
+
+Route Registration Rules:
+"
+go// internal/routes/driver_routes.go
+package routes
+
+import (
+    "github.com/gofiber/fiber/v2"
+    "your-project/internal/handlers"
+    "your-project/internal/middleware"
+)
+
+func SetupDriverRoutes(app *fiber.App, handler *handlers.DriverHandler) {
+    drivers := app.Group("/api/v1/drivers")
+    
+    // Apply authentication middleware to all routes
+    drivers.Use(middleware.AuthRequired())
+    
+    drivers.Get("/", handler.GetDrivers)
+    drivers.Get("/:id", handler.GetDriver)
+    drivers.Post("/", handler.CreateDriver)
+    drivers.Put("/:id", handler.UpdateDriver)
+    drivers.Delete("/:id", handler.DeleteDriver)
+}
+"

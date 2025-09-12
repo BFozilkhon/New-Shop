@@ -1,0 +1,206 @@
+---
+globs: .go
+alwaysApply: false
+---
+
+5. MongoDB Database Rules
+
+Model Definition Rules:
+"
+go// internal/models/driver.go
+package models
+
+import (
+    "time"
+    "go.mongodb.org/mongo-driver/bson/primitive"
+)
+
+type Driver struct {
+    ID          primitive.ObjectID `json:"id" bson:"_id,omitempty"`
+    FirstName   string            `json:"first_name" bson:"first_name" validate:"required,min=2,max=50"`
+    LastName    string            `json:"last_name" bson:"last_name" validate:"required,min=2,max=50"`
+    Email       string            `json:"email" bson:"email" validate:"required,email"`
+    Phone       string            `json:"phone" bson:"phone" validate:"required"`
+    LicenseNo   string            `json:"license_no" bson:"license_no" validate:"required"`
+    Status      DriverStatus      `json:"status" bson:"status" validate:"required"`
+    CreatedAt   time.Time         `json:"created_at" bson:"created_at"`
+    UpdatedAt   time.Time         `json:"updated_at" bson:"updated_at"`
+}
+
+type DriverStatus string
+
+const (
+    DriverStatusActive   DriverStatus = "active"
+    DriverStatusInactive DriverStatus = "inactive"
+    DriverStatusSuspended DriverStatus = "suspended"
+)
+
+type CreateDriverRequest struct {
+    FirstName string       `json:"first_name" validate:"required,min=2,max=50"`
+    LastName  string       `json:"last_name" validate:"required,min=2,max=50"`
+    Email     string       `json:"email" validate:"required,email"`
+    Phone     string       `json:"phone" validate:"required"`
+    LicenseNo string       `json:"license_no" validate:"required"`
+    Status    DriverStatus `json:"status" validate:"required"`
+}
+
+type DriverQueryParams struct {
+    Page     int          `query:"page" validate:"min=1" default:"1"`
+    Limit    int          `query:"limit" validate:"min=1,max=100" default:"10"`
+    Search   string       `query:"search"`
+    Status   DriverStatus `query:"status"`
+    SortBy   string       `query:"sort_by" validate:"oneof=first_name last_name created_at"`
+    SortOrder string      `query:"sort_order" validate:"oneof=asc desc" default:"desc"`
+}
+"
+
+Repository Rules:
+1. Always use interfaces for repositories
+2. Always handle MongoDB errors properly
+3. Always use context for operations
+4. Never use hardcoded collection names
+
+"
+go// internal/repositories/driver_repository.go
+package repositories
+
+import (
+    "context"
+    "go.mongodb.org/mongo-driver/mongo"
+    "your-project/internal/models"
+)
+
+type DriverRepository interface {
+    Create(ctx context.Context, driver models.CreateDriverRequest) (*models.Driver, error)
+    GetByID(ctx context.Context, id string) (*models.Driver, error)
+    GetAll(ctx context.Context, params models.DriverQueryParams) ([]*models.Driver, int64, error)
+    Update(ctx context.Context, id string, driver models.UpdateDriverRequest) (*models.Driver, error)
+    Delete(ctx context.Context, id string) error
+}
+
+type driverRepository struct {
+    collection *mongo.Collection
+}
+
+func NewDriverRepository(db *mongo.Database) DriverRepository {
+    return &driverRepository{
+        collection: db.Collection("drivers"),
+    }
+}
+
+// Always implement proper error handling and use aggregation pipelines for complex queries
+func (r *driverRepository) GetAll(ctx context.Context, params models.DriverQueryParams) ([]*models.Driver, int64, error) {
+    pipeline := mongo.Pipeline{}
+    
+    // Build match stage
+    matchStage := bson.M{}
+    if params.Search != "" {
+        matchStage["$or"] = []bson.M{
+            {"first_name": bson.M{"$regex": params.Search, "$options": "i"}},
+            {"last_name": bson.M{"$regex": params.Search, "$options": "i"}},
+            {"email": bson.M{"$regex": params.Search, "$options": "i"}},
+        }
+    }
+    
+    if params.Status != "" {
+        matchStage["status"] = params.Status
+    }
+    
+    if len(matchStage) > 0 {
+        pipeline = append(pipeline, bson.D{{"$match", matchStage}})
+    }
+    
+    // Add count stage for total
+    countPipeline := append(pipeline, bson.D{{"$count", "total"}})
+    
+    // Add sort, skip, and limit
+    if params.SortBy != "" {
+        sortOrder := 1
+        if params.SortOrder == "desc" {
+            sortOrder = -1
+        }
+        pipeline = append(pipeline, bson.D{{"$sort", bson.M{params.SortBy: sortOrder}}})
+    }
+    
+    skip := (params.Page - 1) * params.Limit
+    pipeline = append(pipeline, bson.D{{"$skip", skip}})
+    pipeline = append(pipeline, bson.D{{"$limit", params.Limit}})
+    
+    // Execute queries
+    cursor, err := r.collection.Aggregate(ctx, pipeline)
+    if err != nil {
+        return nil, 0, err
+    }
+    defer cursor.Close(ctx)
+    
+    var drivers []*models.Driver
+    if err = cursor.All(ctx, &drivers); err != nil {
+        return nil, 0, err
+    }
+    
+    // Get total count
+    countCursor, err := r.collection.Aggregate(ctx, countPipeline)
+    if err != nil {
+        return nil, 0, err
+    }
+    defer countCursor.Close(ctx)
+    
+    var countResult []bson.M
+    if err = countCursor.All(ctx, &countResult); err != nil {
+        return nil, 0, err
+    }
+    
+    total := int64(0)
+    if len(countResult) > 0 {
+        total = countResult[0]["total"].(int32)
+    }
+    
+    return drivers, total, nil
+}
+Database Connection Rules
+go// internal/config/database.go
+package config
+
+import (
+    "context"
+    "time"
+    "go.mongodb.org/mongo-driver/mongo"
+    "go.mongodb.org/mongo-driver/mongo/options"
+)
+
+type Database struct {
+    Client *mongo.Client
+    DB     *mongo.Database
+}
+
+func NewDatabase(uri, dbName string) (*Database, error) {
+    ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+    defer cancel()
+    
+    // Always set proper connection options
+    clientOptions := options.Client().ApplyURI(uri).SetMaxPoolSize(10).SetMinPoolSize(1)
+    
+    client, err := mongo.Connect(ctx, clientOptions)
+    if err != nil {
+        return nil, err
+    }
+    
+    // Always ping to verify connection
+    if err := client.Ping(ctx, nil); err != nil {
+        return nil, err
+    }
+    
+    db := client.Database(dbName)
+    
+    return &Database{
+        Client: client,
+        DB:     db,
+    }, nil
+}
+
+func (d *Database) Close() error {
+    ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+    defer cancel()
+    return d.Client.Disconnect(ctx)
+}
+"

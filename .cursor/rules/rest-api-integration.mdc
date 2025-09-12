@@ -1,0 +1,117 @@
+
+3. Frontend-Backend Integration (TanStack Query)
+
+Service Layer Rules:
+1. Always create service classes for API endpoints
+2. Always use proper error handling
+3. Never expose raw HTTP responses to components
+4. Always transform data at service layer
+"
+typescript// services/base/apiClient.ts
+import axios, { AxiosInstance, AxiosResponse } from 'axios';
+import { ApiResponse, PaginatedResponse } from '@/types/api';
+
+class ApiClient {
+  private client: AxiosInstance;
+
+  constructor() {
+    this.client = axios.create({
+      baseURL: import.meta.env.VITE_API_BASE_URL,
+      timeout: 10000,
+    });
+
+    this.setupInterceptors();
+  }
+
+  private setupInterceptors() {
+    // Request interceptor
+    this.client.interceptors.request.use((config) => {
+      const token = localStorage.getItem('authToken');
+      if (token) {
+        config.headers.Authorization = `Bearer ${token}`;
+      }
+      return config;
+    });
+
+    // Response interceptor
+    this.client.interceptors.response.use(
+      (response) => response,
+      (error) => {
+        if (error.response?.status === 401) {
+          // Handle unauthorized
+          localStorage.removeItem('authToken');
+          window.location.href = '/login';
+        }
+        return Promise.reject(error);
+      }
+    );
+  }
+
+  async get<T>(url: string, params?: any): Promise<T> {
+    const response: AxiosResponse<ApiResponse<T>> = await this.client.get(url, { params });
+    return response.data.data;
+  }
+
+  async post<T>(url: string, data?: any): Promise<T> {
+    const response: AxiosResponse<ApiResponse<T>> = await this.client.post(url, data);
+    return response.data.data;
+  }
+
+  // Add put, delete, patch methods similarly
+}
+"
+"
+export const apiClient = new ApiClient();
+Domain Service Template
+typescript// services/driverService.ts
+import { apiClient } from './base/apiClient';
+import { Driver, CreateDriverRequest, UpdateDriverRequest, DriverQueryParams } from '@/types/driver';
+import { PaginatedResponse } from '@/types/api';
+
+class DriverService {
+  private readonly basePath = '/drivers';
+
+  async getDrivers(params?: DriverQueryParams): Promise<PaginatedResponse<Driver>> {
+    return apiClient.get<PaginatedResponse<Driver>>(this.basePath, params);
+  }
+
+  async getDriver(id: string): Promise<Driver> {
+    return apiClient.get<Driver>(`${this.basePath}/${id}`);
+  }
+
+  async createDriver(data: CreateDriverRequest): Promise<Driver> {
+    return apiClient.post<Driver>(this.basePath, data);
+  }
+
+  async updateDriver(id: string, data: UpdateDriverRequest): Promise<Driver> {
+    return apiClient.put<Driver>(`${this.basePath}/${id}`, data);
+  }
+
+  async deleteDriver(id: string): Promise<void> {
+    return apiClient.delete<void>(`${this.basePath}/${id}`);
+  }
+}
+
+export const driverService = new DriverService();
+"
+
+Query Hook Rules:
+1. Always use consistent query keys
+2. Always implement optimistic updates for mutations
+3. Always handle loading and error states
+4. Always implement proper cache invalidation
+
+"
+typescript// hooks/queries/useDriverQueries.ts
+export const DRIVER_QUERY_KEYS = {
+  all: ['drivers'] as const,
+  lists: () => [...DRIVER_QUERY_KEYS.all, 'list'] as const,
+  list: (params?: DriverQueryParams) => [...DRIVER_QUERY_KEYS.lists(), params] as const,
+  details: () => [...DRIVER_QUERY_KEYS.all, 'detail'] as const,
+  detail: (id: string) => [...DRIVER_QUERY_KEYS.details(), id] as const,
+};
+"
+  details: () => [...DRIVER_QUERY_KEYS.all, 'detail'] as const,
+  detail: (id: string) => [...DRIVER_QUERY_KEYS.details(), id] as const,
+};
+"

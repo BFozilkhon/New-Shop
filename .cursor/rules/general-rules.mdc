@@ -1,0 +1,29 @@
+---
+alwaysApply: true
+---
+
+General Development Rules
+
+Error Handling:
+1. Always create custom error types
+2. Always log errors with context
+3. Never expose internal errors to client
+4. Always use structured logging
+
+Testing:
+1. Always write unit tests for services and repositories
+2. Always use testify for assertions
+3. Always mock external dependencies
+4. Never test implementation details
+
+Documentation:
+1. Always document public functions and types
+2. Always include examples in documentation
+3. Always maintain API documentation with swagger
+
+Performance:
+1. Always use indexes for MongoDB queries
+2. Always implement proper pagination
+3. Always use connection pooling
+4. Never fetch all records without pagination
+

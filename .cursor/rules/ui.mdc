@@ -1,0 +1,114 @@
+---
+globs: .tsx,.ts
+alwaysApply: false
+---
+
+2. TailwindCSS + HeroUI Rules
+
+Setup Configuration:
+"
+typescript// tailwind.config.js
+import { heroui } from "@heroui/react";
+
+export default {
+  content: [
+    "./index.html",
+    "./src/**/*.{js,ts,jsx,tsx}",
+    "./node_modules/@heroui/theme/dist/**/*.{js,ts,jsx,tsx}"
+  ],
+  theme: {
+    extend: {
+      colors: {
+        // Custom TMS colors
+        primary: {
+          50: '#f0f9ff',
+          500: '#3b82f6',
+          900: '#1e3a8a',
+        }
+      }
+    },
+  },
+  darkMode: "class",
+  plugins: [heroui()]
+}
+"
+
+Component Styling Rules:
+1. Always use HeroUI components as base, extend with Tailwind
+2. Always create theme-aware components
+3. Never use inline styles
+4. Always use CSS variables for dynamic themes
+5. Always follow mobile-first responsive design
+
+Generic Component Template:
+"
+typescript// components/ui/Card/Card.tsx
+import { Card as HeroCard, CardHeader, CardBody } from "@heroui/react";
+import { ReactNode } from "react";
+import { cn } from "@/utils/cn";
+
+interface CardProps {
+  children: ReactNode;
+  title?: string;
+  className?: string;
+  padding?: 'sm' | 'md' | 'lg';
+  shadow?: boolean;
+}
+
+export const Card = ({ 
+  children, 
+  title, 
+  className,
+  padding = 'md',
+  shadow = true 
+}: CardProps) => {
+  const paddingClasses = {
+    sm: 'p-2',
+    md: 'p-4',
+    lg: 'p-6'
+  };
+
+  return (
+    <HeroCard 
+      className={cn(
+        'w-full',
+        shadow && 'shadow-lg',
+        className
+      )}
+    >
+      {title && (
+        <CardHeader className="pb-2">
+          <h3 className="text-lg font-semibold text-foreground">{title}</h3>
+        </CardHeader>
+      )}
+      <CardBody className={paddingClasses[padding]}>
+        {children}
+      </CardBody>
+    </HeroCard>
+  );
+};
+"
+
+Dark/Light Mode Rules:
+"
+typescript// contexts/ThemeContext.tsx
+import { createContext, useContext, useEffect, useState } from 'react';
+
+type Theme = 'light' | 'dark' | 'system';
+
+interface ThemeContextType {
+  theme: Theme;
+  setTheme: (theme: Theme) => void;
+  actualTheme: 'light' | 'dark';
+}
+
+export const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
+
+export const useTheme = () => {
+  const context = useContext(ThemeContext);
+  if (!context) throw new Error('useTheme must be used within ThemeProvider');
+  return context;
+};
+
+// Always wrap app with theme provider and apply classes conditionally
+"

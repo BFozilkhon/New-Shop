@@ -1,0 +1,41 @@
+version: "3.9"
+services:
+  mongo:
+    image: mongo:7
+    restart: always
+    volumes:
+      - mongo-data:/data/db
+  backend:
+    build: ./backend
+    environment:
+      - ENV=production
+      - PORT=8081
+      - MONGO_URI=mongodb://mongo:27017
+      - DB_NAME=shop
+      - JWT_SECRET=${JWT_SECRET:-change_this_prod_secret}
+      - FRONTEND_URL=${FRONTEND_URL:-https://findest.uz,http://findest.uz,https://134.209.218.206,http://134.209.218.206}
+    depends_on:
+      - mongo
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    environment:
+      - VITE_API_BASE=/api
+    command: ["npm","run","build"]
+    volumes:
+      - frontend-build:/app/dist
+  nginx:
+    image: nginx:1.27-alpine
+    depends_on:
+      - backend
+      - frontend
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - frontend-build:/usr/share/nginx/html:ro
+volumes:
+  mongo-data: {}
+  frontend-build: {} 

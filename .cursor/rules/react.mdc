@@ -1,0 +1,142 @@
+---
+globs: .tsx,.ts
+alwaysApply: false
+---
+
+1. React.js + TypeScript + Vite Rules
+
+Project Structure:
+"
+src/
+├── components/
+│   ├── common/           # Generic reusable components
+│   ├── forms/           # Form-specific components
+│   ├── layouts/         # Layout components
+│   └── ui/              # HeroUI wrapper components
+├── pages/               # Route components
+├── hooks/               # Custom hooks
+├── services/            # API services
+├── types/               # TypeScript type definitions
+├── utils/               # Utility functions
+├── contexts/            # React contexts
+├── constants/           # App constants
+└── assets/              # Static assets
+"
+
+Component Rules:
+1. Always create generic, reusable components in components/common/
+2. Never write business logic directly in components - use custom hooks
+3. Always use TypeScript interfaces for props
+4. Never use any type - create proper interfaces
+5. Always follow naming convention: PascalCase for components, camelCase for functions
+6. Always create barrel exports (index.ts) in component folders
+7. Never import components with relative paths beyond one level
+
+Component Template:
+"
+typescript// components/common/GenericButton/GenericButton.tsx
+import { Button, ButtonProps } from "@heroui/react";
+import { ReactNode } from "react";
+
+interface GenericButtonProps extends Omit<ButtonProps, 'children'> {
+  children: ReactNode;
+  loading?: boolean;
+  icon?: ReactNode;
+}
+
+export const GenericButton = ({ 
+  children, 
+  loading = false, 
+  icon,
+  disabled,
+  ...props 
+}: GenericButtonProps) => {
+  return (
+    <Button 
+      {...props}
+      disabled={disabled || loading}
+      startContent={!loading ? icon : undefined}
+      isLoading={loading}
+    >
+      {children}
+    </Button>
+  );
+};
+
+// components/common/GenericButton/index.ts
+export { GenericButton } from './GenericButton';
+export type { GenericButtonProps } from './GenericButton';
+"
+
+API Integration Rules:
+1. Always use TanStack Query for server state management
+2. Never use useState for server data
+3. Always create service functions in services/ directory
+4. Always use custom hooks for API calls
+5. Never call API directly in components
+
+Custom Hook Template:
+"
+typescript// hooks/useDrivers.ts
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { driverService } from '@/services/driverService';
+import { Driver, CreateDriverRequest } from '@/types/driver';
+
+export const useDrivers = (params?: DriverQueryParams) => {
+  return useQuery({
+    queryKey: ['drivers', params],
+    queryFn: () => driverService.getDrivers(params),
+    staleTime: 5 * 60 * 1000, // 5 minutes
+  });
+};
+
+export const useCreateDriver = () => {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: (data: CreateDriverRequest) => driverService.createDriver(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['drivers'] });
+    },
+  });
+};
+"
+
+Route Structure:
+1. Always use React Router v6 with lazy loading
+2. Always wrap pages in layouts
+3. Never define routes inline - use route objects
+
+"
+typescript// routes/index.tsx
+import { createBrowserRouter } from 'react-router-dom';
+import { lazy, Suspense } from 'react';
+import { MainLayout } from '@/components/layouts/MainLayout';
+import { LoadingSpinner } from '@/components/common/LoadingSpinner';
+
+const DriversPage = lazy(() => import('@/pages/Drivers'));
+const DashboardPage = lazy(() => import('@/pages/Dashboard'));
+
+const PageWrapper = ({ children }: { children: React.ReactNode }) => (
+  <Suspense fallback={<LoadingSpinner />}>
+    {children}
+  </Suspense>
+);
+
+export const router = createBrowserRouter([
+  {
+    path: '/',
+    element: <MainLayout />,
+    children: [
+      {
+        index: true,
+        element: <PageWrapper><DashboardPage /></PageWrapper>
+      },
+      {
+        path: 'drivers',
+        element: <PageWrapper><DriversPage /></PageWrapper>
+      }
+    ]
+  }
+]);
+"
