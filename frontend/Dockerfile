@@ -5,6 +5,8 @@ WORKDIR /app
 COPY package.json ./
 RUN npm install --legacy-peer-deps --silent
 COPY . .
+ARG VITE_API_BASE
+ENV VITE_API_BASE=${VITE_API_BASE}
 RUN npm run build
 
 FROM node:20-bullseye-slim
