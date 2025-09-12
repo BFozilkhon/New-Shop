@@ -1,6 +1,6 @@
 import { apiClient } from './base/apiClient'
 
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8081'
+const API_BASE = import.meta.env.VITE_API_BASE || '/'
 
 export const uploadService = {
   uploadImages: async (files: File[]) => {
