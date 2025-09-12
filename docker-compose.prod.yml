@@ -36,6 +36,10 @@ services:
     volumes:
       - ./nginx/conf.d:/etc/nginx/conf.d:ro
       - frontend-build:/usr/share/nginx/html:ro
+      - certbot-webroot:/var/www/certbot:ro
+      - letsencrypt:/etc/letsencrypt
 volumes:
   mongo-data: {}
-  frontend-build: {} 
+  frontend-build: {}
+  certbot-webroot: {}
+  letsencrypt: {} 
