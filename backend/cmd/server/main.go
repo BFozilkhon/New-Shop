@@ -19,6 +19,8 @@ import (
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.uber.org/zap"
+	"net/url"
+	"strings"
 )
 
 func seedDefaults(ctx context.Context, db *mongo.Database, logger *zap.Logger) error {
@@ -97,7 +99,50 @@ func main() {
 
 	app := fiber.New(fiber.Config{ ErrorHandler: utils.FiberErrorHandler(logger), BodyLimit: 200 * 1024 * 1024 })
 	app.Use(requestid.New())
-	app.Use(cors.New(cors.Config{ AllowOrigins: cfg.FrontendURL, AllowCredentials: true, AllowHeaders: "Origin, Content-Type, Accept, Authorization, X-Tenant-ID, X-Store-ID" }))
+
+	// Build an exact-allow list from FRONTEND_URL (comma-separated) and allow subdomains for production domain
+	allowedExact := map[string]struct{}{}
+	for _, origin := range strings.Split(cfg.FrontendURL, ",") {
+		trimmed := strings.TrimSpace(origin)
+		if trimmed != "" { allowedExact[trimmed] = struct{}{} }
+	}
+
+	// Fallback static CORS for simple cases (no wildcard subdomains)
+	app.Use(cors.New(cors.Config{
+		AllowOrigins:     cfg.FrontendURL + ",http://134.209.218.206:5174,http://134.209.218.206,https://134.209.218.206,http://findest.uz,https://findest.uz,http://tss.findest.uz,https://tss.findest.uz",
+		AllowCredentials: true,
+		AllowHeaders:     "Origin, Content-Type, Accept, Authorization, X-Tenant-ID, X-Store-ID",
+		AllowMethods:     "GET,POST,PUT,PATCH,DELETE,OPTIONS",
+	}))
+
+	// Dynamic CORS for wildcard subdomains and IP (any port)
+	app.Use(func(c *fiber.Ctx) error {
+		origin := c.Get("Origin")
+		if origin != "" {
+			if _, ok := allowedExact[origin]; ok {
+				c.Set("Access-Control-Allow-Origin", origin)
+				c.Set("Vary", "Origin")
+				c.Set("Access-Control-Allow-Credentials", "true")
+				c.Set("Access-Control-Allow-Headers", "Origin, Content-Type, Accept, Authorization, X-Tenant-ID, X-Store-ID")
+				c.Set("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS")
+				if c.Method() == fiber.MethodOptions { return c.SendStatus(fiber.StatusNoContent) }
+				return c.Next()
+			}
+			u, err := url.Parse(origin)
+			if err == nil {
+				host := u.Hostname()
+				if host == "134.209.218.206" || host == "findest.uz" || strings.HasSuffix(host, ".findest.uz") {
+					c.Set("Access-Control-Allow-Origin", origin)
+					c.Set("Vary", "Origin")
+					c.Set("Access-Control-Allow-Credentials", "true")
+					c.Set("Access-Control-Allow-Headers", "Origin, Content-Type, Accept, Authorization, X-Tenant-ID, X-Store-ID")
+					c.Set("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS")
+					if c.Method() == fiber.MethodOptions { return c.SendStatus(fiber.StatusNoContent) }
+				}
+			}
+		}
+		return c.Next()
+	})
 	// Serve uploaded files publicly so frontend can load images without auth
 	app.Static("/uploads", "/tmp/uploads")
 	app.Get("/health", func(c *fiber.Ctx) error { return c.SendString("ok") })

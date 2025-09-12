@@ -13,7 +13,7 @@ services:
       - MONGO_URI=mongodb://mongo:27017
       - DB_NAME=shop
       - JWT_SECRET=${JWT_SECRET:-change_this_prod_secret}
-      - FRONTEND_URL=${FRONTEND_URL:-https://findest.uz,http://findest.uz,https://134.209.218.206,http://134.209.218.206}
+      - FRONTEND_URL=${FRONTEND_URL:-https://findest.uz,http://findest.uz,https://tss.findest.uz,http://tss.findest.uz,https://134.209.218.206,http://134.209.218.206,http://134.209.218.206:5174}
     depends_on:
       - mongo
   frontend:
