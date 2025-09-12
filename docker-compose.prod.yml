@@ -23,7 +23,9 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        - VITE_API_BASE=/api
+        - VITE_API_BASE=/
+    environment:
+      - VITE_API_BASE=/
     command: ["npm","run","build"]
     volumes:
       - frontend-build:/app/dist
