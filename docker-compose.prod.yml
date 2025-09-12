@@ -16,6 +16,8 @@ services:
       - FRONTEND_URL=${FRONTEND_URL:-https://findest.uz,http://findest.uz,https://tss.findest.uz,http://tss.findest.uz,https://134.209.218.206,http://134.209.218.206,http://134.209.218.206:5174}
     depends_on:
       - mongo
+    ports:
+      - "8081:8081"
   frontend:
     build:
       context: ./frontend
