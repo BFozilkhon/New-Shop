@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import CustomMainBody from '../../components/common/CustomMainBody'
 import { Button, Input, Select, SelectItem, Textarea, Switch, DatePicker } from '@heroui/react'
+import CustomSelect from '../../components/common/CustomSelect'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { categoriesService } from '../../services/categoriesService'
 import { attributesService } from '../../services/attributesService'
@@ -15,9 +16,13 @@ import CustomDocumentUpload from '../../components/common/CustomDocumentUpload'
 import { useTranslation } from 'react-i18next'
 import { storesService } from '../../services/storesService'
 import { companiesService } from '../../services/companiesService'
+import CategorySelector from './components/CategoryPicker'
+import CharacteristicModal from '../catalog/components/CharacteristicModal'
+import VariantsBuilder, { GeneratedVariant } from './components/VariantsBuilder'
 
 const sections = [
   { key: 'main', labelKey: 'products.form.main' },
+  { key: 'variations', labelKey: 'products.form.variations' },
   { key: 'prices', labelKey: 'products.form.prices' },
   { key: 'quantity', labelKey: 'products.form.quantity' },
   { key: 'characteristics', labelKey: 'products.form.characteristics' },
@@ -39,6 +44,7 @@ export default function ProductEditPage() {
   const [partNumber, setPartNumber] = useState('')
   const [description, setDescription] = useState('')
   const [categoryId, setCategoryId] = useState<string>('')
+  const [categoryIds, setCategoryIds] = useState<string[]>([])
   const [brandId, setBrandId] = useState<string>('')
   const [supplierId, setSupplierId] = useState<string>('')
   const [companyId, setCompanyId] = useState<string>('')
@@ -49,11 +55,19 @@ export default function ProductEditPage() {
   const [dimensions, setDimensions] = useState<ProductDimensions>({ length: 0, width: 0, height: 0, unit: 'cm' })
   const [price, setPrice] = useState(0)
   const [costPrice, setCostPrice] = useState(0)
+  const [markup, setMarkup] = useState<number>(0)
   const [stock, setStock] = useState(0)
   const [minStock, setMinStock] = useState(0)
   const [maxStock, setMaxStock] = useState(0)
   const [selectedCatalogAttribute, setSelectedCatalogAttribute] = useState<string>('')
   const [selectedCatalogCharacteristic, setSelectedCatalogCharacteristic] = useState<string>('')
+  const [charValues, setCharValues] = useState<Record<string, string>>({})
+  const [charModalOpen, setCharModalOpen] = useState(false)
+  const [editCharOpen, setEditCharOpen] = useState(false)
+  const [editCharItem, setEditCharItem] = useState<any|null>(null)
+  const [editCharNewValue, setEditCharNewValue] = useState('')
+  const [charSelectKeys, setCharSelectKeys] = useState<Record<string, number>>({})
+  const [isRealizatsiya, setIsRealizatsiya] = useState(false)
   const [status, setStatus] = useState('active')
   const [isPublished, setIsPublished] = useState(false)
   const [isActive, setIsActive] = useState(true)
@@ -61,6 +75,8 @@ export default function ProductEditPage() {
   const [isKonsignatsiya, setIsKonsignatsiya] = useState(false)
   const [konsignatsiyaDate, setKonsignatsiyaDate] = useState('')
   const [expirationDate, setExpirationDate] = useState('')
+  const [mode, setMode] = useState<'basic'|'variative'>('basic')
+  const [variants, setVariants] = useState<GeneratedVariant[]>([])
 
   // Images
   const [images, setImages] = useState<string[]>([])
@@ -69,7 +85,6 @@ export default function ProductEditPage() {
   const { data: product, isLoading } = useQuery({ queryKey: ['product', id], queryFn: () => productsService.get(id!), enabled: !!id })
 
   // Load dropdown data
-  const categoriesQuery = useQuery({ queryKey: ['categories', 1, 100, ''], queryFn: () => categoriesService.list({ page: 1, limit: 100 }), placeholderData: (prev) => prev })
   const brandsQuery = useQuery({ queryKey: ['brands', 1, 100, ''], queryFn: () => brandsService.list({ page: 1, limit: 100 }), placeholderData: (prev) => prev })
   const suppliersQuery = useQuery({ queryKey: ['suppliers', 1, 100, ''], queryFn: () => suppliersService.list({ page: 1, limit: 100 }), placeholderData: (prev) => prev })
   const companiesQuery = useQuery({ queryKey: ['companies',1,100,''], queryFn: ()=> companiesService.list({ page:1, limit:100, search:'' }), placeholderData:(p)=>p })
@@ -80,7 +95,6 @@ export default function ProductEditPage() {
   const updateMutation = useMutation({
     mutationFn: async () => {
       if (!name || !sku || price <= 0) throw new Error('Please fill in all required fields')
-      
       const payload = {
         name,
         sku,
@@ -95,6 +109,7 @@ export default function ProductEditPage() {
         weight,
         dimensions,
         category_id: categoryId || undefined,
+        category_ids: (categoryIds && categoryIds.length ? categoryIds : undefined),
         brand_id: brandId || undefined,
         supplier_id: supplierId || undefined,
         company_id: companyId || undefined,
@@ -102,17 +117,17 @@ export default function ProductEditPage() {
         images,
         attributes: [],
         catalog_attributes: [],
-        catalog_characteristics: [],
+        catalog_characteristics: Object.entries(charValues).filter(([_,v]) => v && v.trim()).map(([id, value]) => ({ characteristic_id: id, value })),
         barcode,
         status,
         is_published: isPublished,
         is_active: isActive,
         is_dirty_core: isDirtyCore,
+        is_realizatsiya: isRealizatsiya,
         is_konsignatsiya: isKonsignatsiya,
         konsignatsiya_date: isKonsignatsiya && konsignatsiyaDate ? new Date(konsignatsiyaDate).toISOString() : undefined,
         expiration_date: expirationDate ? new Date(expirationDate).toISOString() : undefined,
       }
-
       return productsService.update(id!, payload)
     },
     onSuccess: () => {
@@ -121,9 +136,7 @@ export default function ProductEditPage() {
       qc.invalidateQueries({ queryKey: ['product', id] })
       navigate('/products/catalog')
     },
-    onError: (error: any) => {
-      toast.error(error?.message || 'Failed to update product')
-    }
+    onError: (error: any) => { toast.error(error?.message || 'Failed to update product') }
   } as any)
 
   // Populate form when product data loads
@@ -134,6 +147,7 @@ export default function ProductEditPage() {
       setPartNumber(product.part_number || '')
       setDescription(product.description)
       setCategoryId(product.category_id || '')
+      setCategoryIds(product.category_ids || (product.category_id ? [product.category_id] : []))
       setBrandId(product.brand_id || '')
       setSupplierId(product.supplier_id || '')
       setCompanyId(product.company_id || '')
@@ -144,16 +158,28 @@ export default function ProductEditPage() {
       setDimensions(product.dimensions)
       setPrice(product.price)
       setCostPrice(product.cost_price)
+      if ((product as any).cost_price > 0) {
+        const cp = (product as any).cost_price as number
+        const rp = (product as any).price as number
+        setMarkup(Math.round(((rp - cp) / cp) * 100))
+      } else {
+        setMarkup(0)
+      }
       setStock(product.stock)
       setMinStock(product.min_stock)
       setMaxStock(product.max_stock)
       setImages(product.images || [])
       setSelectedCatalogAttribute('')
       setSelectedCatalogCharacteristic('')
+      // Prefill dynamic characteristic values if present
+      const charMap: Record<string, string> = {}
+      ;(product.catalog_characteristics || []).forEach((cc: any) => { if (cc.characteristic_id) charMap[cc.characteristic_id] = cc.value })
+      setCharValues(charMap)
       setStatus(product.status)
       setIsPublished(product.is_published)
       setIsActive(product.is_active)
       setIsDirtyCore(!!product.is_dirty_core)
+      setIsRealizatsiya(!!(product as any).is_realizatsiya)
       setIsKonsignatsiya(!!product.is_konsignatsiya)
       setKonsignatsiyaDate(product.konsignatsiya_date ? product.konsignatsiya_date.slice(0,10) : '')
       setExpirationDate(product.expiration_date ? product.expiration_date.slice(0,10) : '')
@@ -183,7 +209,6 @@ export default function ProductEditPage() {
     el?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 
-
   if (isLoading) return <div>Loading...</div>
 
   return (
@@ -211,84 +236,44 @@ export default function ProductEditPage() {
               <h3 className="text-base font-semibold">{t('products.form.main')}</h3>
               <div className="grid grid-cols-2 gap-6">
                 <Input isRequired label={t('products.form.product_name')} placeholder={t('products.form.product_name_ph')} variant="bordered" classNames={{ inputWrapper: 'h-14' }} labelPlacement="inside" value={name} onValueChange={setName} isReadOnly={isViewMode} />
-                <Input isRequired label={t('products.form.sku')} placeholder={t('products.form.sku_ph')} variant="bordered" classNames={{ inputWrapper: 'h-14' }} labelPlacement="inside" value={sku} onValueChange={setSku} isReadOnly={isViewMode} />
-                <Input label={t('products.form.part_number')} placeholder={t('products.form.part_number_ph')} variant="bordered" classNames={{ inputWrapper: 'h-14' }} labelPlacement="inside" value={partNumber} onValueChange={setPartNumber} isReadOnly={isViewMode} />
-                <Input label={t('products.form.barcode')} placeholder={t('products.form.barcode_ph')} variant="bordered" classNames={{ inputWrapper: 'h-14' }} labelPlacement="inside" value={barcode} onValueChange={setBarcode} isReadOnly={isViewMode} />
-                
-                <Select
-                  label={t('products.form.category')}
-                  placeholder={t('products.form.category_ph')}
-                  variant="bordered"
-                  classNames={{ trigger: 'h-14' }}
-                  labelPlacement="inside"
-                  selectedKeys={categoryId ? [categoryId] : []}
-                  onSelectionChange={(keys) => setCategoryId(Array.from(keys)[0] as string || '')}
-                  isDisabled={isViewMode}
-                >
-                  {(categoriesQuery.data?.items || []).map(category => (
-                    <SelectItem key={category.id}>{category.name}</SelectItem>
-                  ))}
-                </Select>
-                
-                <Select
-                  label={t('products.form.brand')}
-                  placeholder={t('products.form.brand_ph')}
-                  variant="bordered"
-                  classNames={{ trigger: 'h-14' }}
-                  labelPlacement="inside"
-                  selectedKeys={brandId ? [brandId] : []}
-                  onSelectionChange={(keys) => setBrandId(Array.from(keys)[0] as string || '')}
-                  isDisabled={isViewMode}
-                >
-                  {(brandsQuery.data?.items || []).map(brand => (
-                    <SelectItem key={brand.id}>{brand.name}</SelectItem>
-                  ))}
-                </Select>
-                
-                <Select
-                  label={t('companies.header')}
-                  variant="bordered"
-                  classNames={{ trigger: 'h-14' }}
-                  labelPlacement="inside"
-                  selectedKeys={companyId ? [companyId] : []}
-                  onSelectionChange={(keys) => setCompanyId(Array.from(keys)[0] as string || '')}
-                  isDisabled={isViewMode}
-                >
-                  {(companiesQuery.data?.items || []).map(co => (<SelectItem key={co.id}>{co.title}</SelectItem>))}
-                </Select>
-
-                <Select
-                  label={t('stores.header')}
-                  variant="bordered"
-                  classNames={{ trigger: 'h-14' }}
-                  labelPlacement="inside"
-                  selectedKeys={storeId ? [storeId] : []}
-                  onSelectionChange={(keys) => setStoreId(Array.from(keys)[0] as string || '')}
-                  isDisabled={isViewMode}
-                >
+                <Select label={t('stores.header')} variant="bordered" classNames={{ trigger: 'h-14' }} labelPlacement="inside" selectedKeys={storeId ? [storeId] : []} onSelectionChange={(keys) => setStoreId(Array.from(keys)[0] as string || '')} isDisabled={isViewMode}>
                   {(storesQuery.data?.items || []).map(st => (<SelectItem key={st.id}>{st.title}</SelectItem>))}
                 </Select>
+                <Input label={t('products.form.part_number')} placeholder={t('products.form.part_number_ph')} variant="bordered" classNames={{ inputWrapper: 'h-14' }} labelPlacement="inside" value={partNumber} onValueChange={setPartNumber} isReadOnly={isViewMode} />
+                <DatePicker variant='bordered' aria-label="Expiration date" label="Expiration date" isDisabled={isViewMode} onChange={(d:any)=>{ try{ const s = typeof d?.toString==='function'? d.toString(): String(d); setExpirationDate(s.split('T')[0]) }catch{} }} />
+                <div className="grid grid-cols-2 gap-3 col-span-2">
+                  <Input isRequired label={t('products.form.sku')} placeholder={t('products.form.sku_ph')} variant="bordered" classNames={{ inputWrapper: 'h-14' }} labelPlacement="inside" value={sku} onValueChange={setSku} isReadOnly={isViewMode} endContent={!isViewMode && (<button className="text-primary" onClick={()=> setSku(sku || 'SKU-' + Math.floor(Math.random()*100000))}>Generate</button>)} />
+                  <Input isRequired label={t('products.form.barcode')} placeholder={t('products.form.barcode_ph')} variant="bordered" classNames={{ inputWrapper: 'h-14' }} labelPlacement="inside" value={barcode} onValueChange={setBarcode} isReadOnly={isViewMode} endContent={!isViewMode && (<button className="text-primary" onClick={()=> setBarcode(barcode || String(Date.now()).slice(-12))}>Generate</button>)} />
+                </div>
+                
+                <CustomSelect
+                  label={t('products.form.brand')}
+                  placeholder={t('products.form.brand_ph')}
+                  items={(brandsQuery.data?.items||[]).map((b:any)=> ({ key: b.id, label: b.name }))}
+                  value={brandId}
+                  onChange={(v)=> setBrandId(v)}
+                  allowCreate
+                  onCreate={()=>{/* keep view-only consistent; for edit we could open Brand modal later */}}
+                />
+              
 
-                <Select
+                <CustomSelect
                   label={t('products.form.supplier')}
                   placeholder={t('products.form.supplier_ph')}
-                  variant="bordered"
-                  classNames={{ trigger: 'h-14' }}
-                  labelPlacement="inside"
-                  selectedKeys={supplierId ? [supplierId] : []}
-                  onSelectionChange={(keys) => setSupplierId(Array.from(keys)[0] as string || '')}
-                  isDisabled={isViewMode}
-                >
-                  {(suppliersQuery.data?.items || []).map(supplier => (
-                    <SelectItem key={supplier.id}>{supplier.name}</SelectItem>
-                  ))}
-                </Select>
+                  items={(suppliersQuery.data?.items||[]).map((s:any)=> ({ key: s.id, label: s.name }))}
+                  value={supplierId}
+                  onChange={(v)=> setSupplierId(v)}
+                  allowCreate
+                  onCreate={()=>{ window.location.href = '/products/suppliers/create' }}
+                />
                 
-                <Input label={t('products.form.unit')} placeholder={t('products.form.unit_ph')} variant="bordered" classNames={{ inputWrapper: 'h-14' }} labelPlacement="inside" value={unit} onValueChange={setUnit} isReadOnly={isViewMode} />
+                <Select label={t('products.form.unit')} variant="bordered" classNames={{ trigger: 'h-14' }} labelPlacement="inside" selectedKeys={unit ? [unit] : []} onSelectionChange={(keys) => setUnit(Array.from(keys)[0] as string)} isDisabled={isViewMode}>
+                  <SelectItem key="pcs">pcs</SelectItem>
+                  <SelectItem key="kg">kg</SelectItem>
+                  <SelectItem key="m">m</SelectItem>
+                </Select>
                 <Input label={t('products.form.weight')} placeholder={t('products.form.weight_ph')} type="number" variant="bordered" classNames={{ inputWrapper: 'h-14' }} labelPlacement="inside" value={weight.toString()} onValueChange={(v) => setWeight(parseFloat(v) || 0)} isReadOnly={isViewMode} />
                 
-                <DatePicker variant='bordered' aria-label="Expiration date" label="Expiration date" isDisabled={isViewMode} onChange={(d:any)=>{ try{ const s = typeof d?.toString==='function'? d.toString(): String(d); setExpirationDate(s.split('T')[0]) }catch{} }} />
-
                 <div className="col-span-2">
                   <Textarea label={t('products.form.description')} placeholder={t('products.form.description_ph')} variant="bordered" classNames={{ inputWrapper: 'min-h-[3.5rem]' }} value={description} onValueChange={setDescription} isReadOnly={isViewMode} />
                 </div>
@@ -308,26 +293,25 @@ export default function ProductEditPage() {
                   </Select>
                 </div>
               </div>
-
+              
               <div>
-                <CustomDocumentUpload
-                  label={t('products.form.images')}
-                  accept="image/*"
-                  multiple={true}
-                  maxSize={10}
-                  maxFiles={10}
-                  value={images}
-                  onChange={setImages}
-                  isReadOnly={isViewMode}
-                />
+                <CustomDocumentUpload label={t('products.form.images')} accept="image/*" multiple={true} maxSize={10} maxFiles={10} value={images} onChange={setImages} isReadOnly={isViewMode} />
               </div>
             </section>
 
+            {mode==='variative' && (
+              <section id="sec-variations" data-section="variations" className="space-y-4">
+                <h3 className="text-base font-semibold">Variations</h3>
+                <VariantsBuilder value={variants} onChange={setVariants} baseSku={sku} />
+              </section>
+            )}
+
             <section id="sec-prices" data-section="prices" className="space-y-4">
               <h3 className="text-base font-semibold">{t('products.form.prices')}</h3>
-              <div className="grid grid-cols-2 gap-6">
-                <Input isRequired label={t('products.form.price')} placeholder={t('products.form.price_ph')} type="number" variant="bordered" classNames={{ inputWrapper: 'h-14' }} labelPlacement="inside" value={price.toString()} onValueChange={(v) => setPrice(parseFloat(v) || 0)} startContent={<span className="text-default-400">$</span>} isReadOnly={isViewMode} />
-                <Input label={t('products.form.cost_price')} placeholder={t('products.form.cost_price_ph')} type="number" variant="bordered" classNames={{ inputWrapper: 'h-14' }} labelPlacement="inside" value={costPrice.toString()} onValueChange={(v) => setCostPrice(parseFloat(v) || 0)} startContent={<span className="text-default-400">$</span>} isReadOnly={isViewMode} />
+              <div className="grid grid-cols-3 gap-6">
+                <Input isRequired label={t('products.form.cost_price') || 'Supply price'} placeholder={t('products.form.cost_price_ph')} type="number" variant="bordered" classNames={{ inputWrapper: 'h-14' }} labelPlacement="inside" value={costPrice.toString()} onValueChange={(v) => { const val = parseFloat(v)||0; setCostPrice(val); if (markup>0) setPrice(Math.round(val*(1+markup/100))) }} endContent={<span className="px-2 text-default-500">UZS</span>} isReadOnly={isViewMode} />
+                <Input label={'Markup'} placeholder={'0'} type="number" variant="bordered" classNames={{ inputWrapper: 'h-14' }} labelPlacement="inside" value={String(markup)} onValueChange={(v) => { const m = parseFloat(v)||0; setMarkup(m); if (costPrice>0) setPrice(Math.round(costPrice*(1+m/100))) }} endContent={<span className="px-2 text-default-500">%</span>} isReadOnly={isViewMode} />
+                <Input isRequired label={'Retail price'} placeholder={'0'} type="number" variant="bordered" classNames={{ inputWrapper: 'h-14' }} labelPlacement="inside" value={price.toString()} onValueChange={(v) => { const p = parseFloat(v)||0; setPrice(p); if (costPrice>0) setMarkup(Math.round(((p - costPrice)/costPrice)*100)) }} endContent={<span className="px-2 text-default-500">UZS</span>} isReadOnly={isViewMode} />
               </div>
             </section>
 
@@ -342,63 +326,71 @@ export default function ProductEditPage() {
 
             <section id="sec-characteristics" data-section="characteristics" className="space-y-4">
               <h3 className="text-base font-semibold">{t('products.form.characteristics')}</h3>
-              
+
+              <div className="grid grid-cols-2 gap-4">
+                {(catalogCharacteristicsQuery.data?.items || []).filter(c=> c.is_active).map(c => (
+                  <div key={c.id} className="flex flex-col gap-2">
+                    {c.type === 'boolean' ? (
+                      <Switch isDisabled={isViewMode} isSelected={(charValues[c.id]||'')==='true'} onValueChange={(checked)=> setCharValues(prev => ({ ...prev, [c.id]: checked ? 'true' : 'false' }))}>{''}</Switch>
+                    ) : c.type === 'select' ? (
+                      <CustomSelect
+                        key={`${c.id}-${(charSelectKeys[c.id]||0)}`}
+                        label={c.name}
+                        placeholder={'Select'}
+                        items={(c.values||[]).map((v:string)=> ({ key: v, label: v }))}
+                        value={charValues[c.id] || ''}
+                        onChange={(val)=> setCharValues(prev => ({ ...prev, [c.id]: val }))}
+                        allowCreate
+                        onCreate={(term)=> { setEditCharItem(c); setEditCharNewValue(term); setEditCharOpen(true); setCharSelectKeys(prev=> ({ ...prev, [c.id]: (prev[c.id]||0)+1 })) }}
+                      />
+                    ) : (
+                      <Input labelPlacement="inside" label={c.name} isReadOnly={isViewMode} variant="bordered" placeholder="Enter value" value={charValues[c.id] || ''} onValueChange={(v)=> setCharValues(prev => ({ ...prev, [c.id]: v }))} />
+                    )}
+                  </div>
+                ))}
+              </div>   
+
+              <div className="rounded-xl border border-dashed border-default-300 p-4 flex items-center justify-between">
+                <div>
+                  <div className="font-medium">Optional field</div>
+                  <div className="text-default-500 text-sm">An additional field that characterizes your product</div>
+                </div>
+                {!isViewMode && (<Button variant="flat" onPress={()=> setCharModalOpen(true)}>+ Add field</Button>)}
+              </div>
+
               <div className="grid grid-cols-1 gap-6">
-                <Select
-                  label={t('products.form.status')}
-                  variant="bordered"
-                  classNames={{ trigger: 'h-14' }}
-                  labelPlacement="inside"
-                  selectedKeys={[status]}
-                  onSelectionChange={(keys) => setStatus(Array.from(keys)[0] as string)}
-                  isDisabled={isViewMode}
-                >
+                <Select label={t('products.form.status')} variant="bordered" classNames={{ trigger: 'h-14' }} labelPlacement="inside" selectedKeys={[status]} onSelectionChange={(keys) => setStatus(Array.from(keys)[0] as string)} isDisabled={isViewMode}>
                   <SelectItem key="active">{t('products.form.status_active')}</SelectItem>
                   <SelectItem key="inactive">{t('products.form.status_inactive')}</SelectItem>
-                  <SelectItem key="discontinued">{t('products.form.status_discontinued')}</SelectItem>
-                </Select>
-
-                <Select
-                  label={t('products.form.catalog_attribute')}
-                  placeholder={t('products.form.catalog_attribute_ph')}
-                  variant="bordered"
-                  classNames={{ trigger: 'h-14' }}
-                  labelPlacement="inside"
-                  selectedKeys={selectedCatalogAttribute ? [selectedCatalogAttribute] : []}
-                  onSelectionChange={(keys) => setSelectedCatalogAttribute(Array.from(keys)[0] as string || '')}
-                  isDisabled={isViewMode}
-                >
-                  {(catalogAttributesQuery.data?.items || []).map(attr => (
-                    <SelectItem key={attr.id}>{attr.name}</SelectItem>
-                  ))}
-                </Select>
-
-                <Select
-                  label={t('products.form.catalog_characteristic')}
-                  placeholder={t('products.form.catalog_characteristic_ph')}
-                  variant="bordered"
-                  classNames={{ trigger: 'h-14' }}
-                  labelPlacement="inside"
-                  selectedKeys={selectedCatalogCharacteristic ? [selectedCatalogCharacteristic] : []}
-                  onSelectionChange={(keys) => setSelectedCatalogCharacteristic(Array.from(keys)[0] as string || '')}
-                  isDisabled={isViewMode}
-                >
-                  {(catalogCharacteristicsQuery.data?.items || []).map(char => (
-                    <SelectItem key={char.id}>{char.name}</SelectItem>
-                  ))}
                 </Select>
               </div>
+
+              <div className="col-span-2">
+                <label className="text-sm text-default-600 mb-2 block">{t('products.form.category')}</label>
+                <CategorySelector value={categoryIds} onChange={(ids)=> { setCategoryIds(ids); setCategoryId(ids[ids.length-1] || '') }} />
+              </div>
+
+
 
               <div className="flex flex-wrap items-center gap-6">
                 <Switch isSelected={isPublished} onValueChange={setIsPublished} isDisabled={isViewMode}>{t('products.form.published')}</Switch>
                 <Switch isSelected={isActive} onValueChange={setIsActive} isDisabled={isViewMode}>Is Active</Switch>
                 <Switch isSelected={isDirtyCore} onValueChange={setIsDirtyCore} isDisabled={isViewMode}>Is Dirty Core</Switch>
+                <Switch isSelected={isRealizatsiya} onValueChange={setIsRealizatsiya} isDisabled={isViewMode}>Is Realizatsiya</Switch>
                 <Switch isSelected={isKonsignatsiya} onValueChange={setIsKonsignatsiya} isDisabled={isViewMode}>Is Konsignatsiya</Switch>
-                {isKonsignatsiya ? (
-                  <DatePicker variant='bordered' aria-label="Konsignatsiya date" label="Konsignatsiya date" isDisabled={isViewMode} onChange={(d:any)=>{ try{ const s = typeof d?.toString==='function'? d.toString(): String(d); setKonsignatsiyaDate(s.split('T')[0]) }catch{} }} />
-                ) : null}
               </div>
             </section>
+            <CharacteristicModal isOpen={charModalOpen} mode="create" onClose={()=> setCharModalOpen(false)} onSuccess={()=> { setCharModalOpen(false); qc.invalidateQueries({ queryKey: ['catalog-characteristics'] }) }} />
+            {editCharItem && (
+              <CharacteristicModal isOpen={editCharOpen} mode="edit" characteristic={editCharItem} onClose={()=> setEditCharOpen(false)} onSuccess={async ()=> { setEditCharOpen(false); const res:any = await catalogCharacteristicsQuery.refetch(); const updated = (res?.data?.items||[]).find((x:any)=> x.id===editCharItem.id); if (updated && (updated.values||[]).includes(editCharNewValue)) { setCharValues(prev=> ({ ...prev, [editCharItem.id]: editCharNewValue })) } }} />
+            )}
+            {isKonsignatsiya && (
+              <section className="space-y-4">
+                <div className="grid grid-cols-2 gap-6">
+                  <DatePicker variant='bordered' aria-label="Konsignatsiya date" label="Konsignatsiya date" isDisabled={isViewMode} onChange={(d:any)=>{ try{ const s = typeof d?.toString==='function'? d.toString(): String(d); setKonsignatsiyaDate(s.split('T')[0]) }catch{} }} />
+                </div>
+              </section>
+            )}
           </div>
 
           <div className="sticky bottom-0 mt-4 flex justify-end gap-2">

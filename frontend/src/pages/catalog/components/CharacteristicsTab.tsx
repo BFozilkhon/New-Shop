@@ -46,6 +46,7 @@ export default function CharacteristicsTab() {
     id: c.id,
     name: c.name,
     type: c.type,
+    values: (c.values || []).join(', '),
     status: c.is_active ? t('catalog.common.active') : t('catalog.common.inactive'),
     created_at: new Date(c.created_at).toLocaleDateString(),
   })), [data, t])
@@ -53,6 +54,7 @@ export default function CharacteristicsTab() {
   const columns: CustomColumn[] = useMemo(() => [
     { uid: 'name', name: t('catalog.table.name'), sortable: true },
     { uid: 'type', name: t('catalog.table.type') },
+    { uid: 'values', name: 'Values' },
     { uid: 'status', name: t('catalog.table.status') },
     { uid: 'created_at', name: t('catalog.table.created') },
     { uid: 'actions', name: t('catalog.table.actions') },
@@ -72,6 +74,8 @@ export default function CharacteristicsTab() {
         return (
           <Chip className="capitalize" color="default" size="sm" variant="flat">{item.type}</Chip>
         )
+      case 'values':
+        return item.values ? <span className="text-default-600 text-sm truncate max-w-[320px] inline-block">{item.values}</span> : ''
       case 'status':
         return (
           <Chip className="capitalize border-none gap-1 text-default-600" color={item.status === t('catalog.common.active') ? 'success' : 'danger'} size="sm" variant="dot">{item.status}</Chip>

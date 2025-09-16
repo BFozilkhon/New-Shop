@@ -188,6 +188,7 @@ type UpdateOrderRequest struct {
 	TotalPaidAmount  float64          `json:"total_paid_amount"`
 	IsFinished       bool             `json:"is_finished"`
 	SaleProgress     float64          `json:"sale_progress"`
+	Action           string           `json:"action"`
 }
 
 type OrderFilterRequest struct {

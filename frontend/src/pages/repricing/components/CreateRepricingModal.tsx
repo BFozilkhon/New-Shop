@@ -12,7 +12,7 @@ function generateDefaultName() {
   return `Repricing ${ts}`
 }
 
-export default function CreateRepricingModal({ isOpen, onOpenChange, onCreated }: { isOpen: boolean; onOpenChange: (v:boolean)=>void; onCreated?: ()=>void }) {
+export default function CreateRepricingModal({ isOpen, onOpenChange, onCreated }: { isOpen: boolean; onOpenChange: (v:boolean)=>void; onCreated?: (id?:string)=>void }) {
   const [name, setName] = useState<string>(()=> generateDefaultName())
   const [fromFile, setFromFile] = useState(false)
   const [shopId, setShopId] = useState<string>('')
@@ -23,7 +23,7 @@ export default function CreateRepricingModal({ isOpen, onOpenChange, onCreated }
   const handle = async () => {
     const created = await repricingsService.create({ name, from_file: fromFile, shop_id: shopId, type: rtype })
     onOpenChange(false)
-    onCreated && onCreated()
+    onCreated && onCreated(created?.id)
     // reset for next open
     setName(generateDefaultName())
     setFromFile(false)
@@ -47,8 +47,8 @@ export default function CreateRepricingModal({ isOpen, onOpenChange, onCreated }
         </div>
         <Select isRequired label="Repricing type" selectedKeys={[rtype]} onSelectionChange={(keys)=> setRtype(String(Array.from(keys)[0]||'price_change') as any)} variant="bordered" classNames={{ trigger:'h-14' }}>
           <SelectItem key="currency_change">Change currency</SelectItem>
-          <SelectItem key="price_change">Change the price</SelectItem>
-          <SelectItem key="delivery_price_change">Change delivery price</SelectItem>
+          <SelectItem key="price_change">Change the retail price</SelectItem>
+          <SelectItem key="delivery_price_change">Change the supply price</SelectItem>
         </Select>
       </div>
     </CustomModal>

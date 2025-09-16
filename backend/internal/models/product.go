@@ -22,6 +22,7 @@ type Product struct {
 	Weight      float64            `bson:"weight" json:"weight"`
 	Dimensions  ProductDimensions  `bson:"dimensions" json:"dimensions"`
 	CategoryID  primitive.ObjectID `bson:"category_id,omitempty" json:"category_id"`
+	CategoryIDs []primitive.ObjectID `bson:"category_ids,omitempty" json:"category_ids,omitempty"`
 	BrandID     primitive.ObjectID `bson:"brand_id,omitempty" json:"brand_id"`
 	SupplierID  primitive.ObjectID `bson:"supplier_id,omitempty" json:"supplier_id"`
 	// New relationships (optional)
@@ -50,7 +51,7 @@ type Product struct {
 	IsKonsignatsiya      bool                   `bson:"is_konsignatsiya" json:"is_konsignatsiya"`
 	KonsignatsiyaDate    *time.Time             `bson:"konsignatsiya_date,omitempty" json:"konsignatsiya_date,omitempty"`
 	AdditionalParameters map[string]interface{} `bson:"additional_parameters,omitempty" json:"additional_parameters,omitempty"`
-	Status               string                 `bson:"status" json:"status"` // active, inactive, discontinued
+	Status               string                 `bson:"status" json:"status"` // active, inactive
 	IsPublished          bool                   `bson:"is_published" json:"is_published"`
 	IsActive             bool                   `bson:"is_active" json:"is_active"`
 
@@ -122,11 +123,10 @@ type BundleItem struct {
 
 // Product status constants
 const (
-	ProductStatusActive        = "active"
-	ProductStatusInactive      = "inactive"
-	ProductStatusDiscontinued  = "discontinued"
-	ProductTypeSingle          = "single"
-	ProductTypeBundle          = "bundle"
+	ProductStatusActive   = "active"
+	ProductStatusInactive = "inactive"
+	ProductTypeSingle     = "single"
+	ProductTypeBundle     = "bundle"
 )
 
 // DTO structs
@@ -146,7 +146,9 @@ type ProductDTO struct {
 	Weight      float64            `json:"weight"`
 	Dimensions  ProductDimensions  `json:"dimensions"`
 	CategoryID  string             `json:"category_id,omitempty"`
+	CategoryIDs []string           `json:"category_ids,omitempty"`
 	CategoryName string            `json:"category_name,omitempty"`
+    CategoryNames []string       `json:"category_names,omitempty"`
 	BrandID     string             `json:"brand_id,omitempty"`
 	BrandName   string             `json:"brand_name,omitempty"`
 	SupplierID  string             `json:"supplier_id,omitempty"`
@@ -201,6 +203,7 @@ type ProductCreate struct {
 	Weight      float64            `json:"weight"`
 	Dimensions  ProductDimensions  `json:"dimensions"`
 	CategoryID  string             `json:"category_id,omitempty"`
+	CategoryIDs []string           `json:"category_ids,omitempty"`
 	BrandID     string             `json:"brand_id,omitempty"`
 	SupplierID  string             `json:"supplier_id,omitempty"`
 	CompanyID   string             `json:"company_id,omitempty"`
@@ -246,6 +249,7 @@ type ProductUpdate struct {
 	Weight      *float64            `json:"weight"`
 	Dimensions  *ProductDimensions  `json:"dimensions"`
 	CategoryID  *string             `json:"category_id"`
+	CategoryIDs []string            `json:"category_ids"`
 	BrandID     *string             `json:"brand_id"`
 	SupplierID  *string             `json:"supplier_id"`
 	CompanyID   *string             `json:"company_id"`
@@ -327,6 +331,11 @@ func ToProductDTO(m Product) ProductDTO {
 
 	if m.CategoryID != primitive.NilObjectID {
 		dto.CategoryID = m.CategoryID.Hex()
+	}
+	if len(m.CategoryIDs) > 0 {
+		ids := make([]string, 0, len(m.CategoryIDs))
+		for _, cid := range m.CategoryIDs { ids = append(ids, cid.Hex()) }
+		dto.CategoryIDs = ids
 	}
 	if m.BrandID != primitive.NilObjectID {
 		dto.BrandID = m.BrandID.Hex()

@@ -12,9 +12,10 @@ type Props = {
   brand?: Brand
   onClose: () => void
   onSuccess: () => void
+  prefillName?: string
 }
 
-export default function BrandModal({ isOpen, mode, brand, onClose, onSuccess }: Props) {
+export default function BrandModal({ isOpen, mode, brand, onClose, onSuccess, prefillName }: Props) {
   const { t } = useTranslation()
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
@@ -61,9 +62,13 @@ export default function BrandModal({ isOpen, mode, brand, onClose, onSuccess }: 
       setWebsite(brand.website)
       setIsActive(brand.is_active)
     } else if (isOpen && mode === 'create') {
-      resetForm()
+      setName(prefillName || '')
+      setDescription('')
+      setLogo('')
+      setWebsite('')
+      setIsActive(true)
     }
-  }, [isOpen, mode, brand])
+  }, [isOpen, mode, brand, prefillName])
 
   const handleSubmit = () => {
     if (!name.trim()) {

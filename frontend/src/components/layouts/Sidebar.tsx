@@ -36,7 +36,7 @@ export default function Sidebar() {
   const navigate = useNavigate()
   const { pathname } = useLocation()
   const [collapsed, setCollapsed] = useState(false)
-  const { auth } = useAuth()
+  const { auth, logout } = useAuth()
   const { prefs } = usePreferences()
 
   const hasAccess = (baseKey: string) => auth.permissions.includes(`${baseKey}.access`)
@@ -85,6 +85,11 @@ export default function Sidebar() {
     })
   }
 
+  const handleLogout = () => {
+    try { logout() } catch {}
+    navigate('/login', { replace: true })
+  }
+
   return (
     <div className={`sticky top-0 h-screen transition-all duration-200 flex flex-col bg-transparent`} style={{ width: railWidth }}>
       <div className="px-3 py-3 flex items-center justify-between">
@@ -103,7 +108,7 @@ export default function Sidebar() {
           <div className="flex flex-col items-center gap-3">
             {sections.map(sec => {
               const Icon = sec.icon as any
-              const items = [{ key: sec.to || '#', label: sec.label }, ...((sec.children ?? []).map(ch => ({ key: ch.to, label: ch.label })))]
+              const items = [{ key: sec.to || '#', label: sec.label }, ...((sec.children || []).map(ch => ({ key: ch.to, label: ch.label })))]
               const isOpen = openKey === sec.key
               return (
                 <Dropdown key={sec.key} placement="right-start" isOpen={isOpen} onOpenChange={(o) => setOpenKey(o ? sec.key : null)}>
@@ -142,7 +147,7 @@ export default function Sidebar() {
             >
               {sections.filter(s => s.children && s.children.length > 0).map(sec => {
                 const Icon = sec.icon as any
-                const hasActiveChild = (sec.children ?? []).some(ch => pathname.startsWith(ch.to))
+                const hasActiveChild = (sec.children || []).some(ch => pathname.startsWith(ch.to))
                 return (
                   <AccordionItem
                     key={sec.key}
@@ -152,7 +157,7 @@ export default function Sidebar() {
                     className={hasActiveChild ? 'border-primary-200' : ''}
                   >
                     <div className="grid gap-1">
-                      {(sec.children ?? []).map(ch => (
+                      {(sec.children || []).map(ch => (
                         <ItemLink key={ch.key} to={ch.to} label={ch.label} />
                       ))}
                     </div>
@@ -175,11 +180,11 @@ export default function Sidebar() {
           )}
         </div>
         {collapsed ? (
-          <Button isIconOnly variant="flat" color="danger" aria-label={t('common.logout')}>
+          <Button isIconOnly variant="flat" color="danger" aria-label={t('common.logout')} onPress={handleLogout}>
             <ArrowRightOnRectangleIcon className="w-4 h-4" />
           </Button>
         ) : (
-          <Button fullWidth variant="flat" color="danger" startContent={<ArrowRightOnRectangleIcon className="w-4 h-4" />}>{t('common.logout')}</Button>
+          <Button fullWidth variant="flat" color="danger" startContent={<ArrowRightOnRectangleIcon className="w-4 h-4" />} onPress={handleLogout}>{t('common.logout')}</Button>
         )}
       </div>
     </div>

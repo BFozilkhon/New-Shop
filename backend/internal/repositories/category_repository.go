@@ -30,6 +30,10 @@ func NewCategoryRepository(db *mongo.Database) *CategoryRepository {
 	return &CategoryRepository{col: db.Collection("categories")}
 }
 
+func (r *CategoryRepository) Col() *mongo.Collection {
+	return r.col
+}
+
 func (r *CategoryRepository) List(ctx context.Context, p CategoryListParams) ([]models.Category, int64, error) {
 	if p.Page < 1 {
 		p.Page = 1
@@ -168,4 +172,13 @@ func (r *CategoryRepository) HasChildren(ctx context.Context, id primitive.Objec
 		return false, err
 	}
 	return count > 0, nil
+}
+
+func (r *CategoryRepository) ListAll(ctx context.Context) ([]models.Category, error) {
+	cur, err := r.col.Find(ctx, bson.M{"is_deleted": false}, options.Find().SetSort(bson.D{{Key: "level", Value: 1}, {Key: "name", Value: 1}}))
+	if err != nil { return nil, err }
+	defer cur.Close(ctx)
+	var items []models.Category
+	if err := cur.All(ctx, &items); err != nil { return nil, err }
+	return items, nil
 } 

@@ -70,10 +70,14 @@ func (s *CharacteristicService) Create(ctx context.Context, body models.Characte
 	if !s.isValidType(characteristicType) {
 		return nil, utils.BadRequest("INVALID_TYPE", "Invalid characteristic type. Valid types: text, number, select, boolean", nil)
 	}
+	if characteristicType == models.CharacteristicTypeSelect {
+		if len(body.Values) == 0 { return nil, utils.BadRequest("VALIDATION_ERROR", "At least one option is required for select characteristic", nil) }
+	}
 
 	m := &models.Characteristic{
 		Name:      body.Name,
 		Type:      characteristicType,
+		Values:    body.Values,
 		IsActive:  true,
 		IsDeleted: false,
 	}
@@ -106,9 +110,8 @@ func (s *CharacteristicService) Update(ctx context.Context, id string, body mode
 		}
 		update["type"] = *body.Type
 	}
-	if body.IsActive != nil {
-		update["is_active"] = *body.IsActive
-	}
+	if body.Values != nil { update["values"] = body.Values }
+	if body.IsActive != nil { update["is_active"] = *body.IsActive }
 
 	updated, err := s.repo.Update(ctx, oid, update)
 	if err != nil {

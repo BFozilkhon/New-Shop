@@ -104,6 +104,7 @@ func EnsureIndexes(ctx context.Context, db *mongo.Database) error {
 		{ Keys: bson.D{{Key: "tenant_id", Value: 1}, {Key: "sku", Value: 1}}, Options: options.Index().SetUnique(true).SetName("ux_products_tenant_sku") },
 		{ Keys: bson.D{{Key: "tenant_id", Value: 1}, {Key: "name", Value: 1}}, Options: options.Index().SetName("ix_products_tenant_name") },
 		{ Keys: bson.D{{Key: "tenant_id", Value: 1}, {Key: "category_id", Value: 1}}, Options: options.Index().SetName("ix_products_tenant_category") },
+		{ Keys: bson.D{{Key: "tenant_id", Value: 1}, {Key: "category_ids", Value: 1}}, Options: options.Index().SetName("ix_products_tenant_category_ids") },
 		{ Keys: bson.D{{Key: "tenant_id", Value: 1}, {Key: "brand_id", Value: 1}}, Options: options.Index().SetName("ix_products_tenant_brand") },
 		{ Keys: bson.D{{Key: "tenant_id", Value: 1}, {Key: "supplier_id", Value: 1}}, Options: options.Index().SetName("ix_products_tenant_supplier") },
 		{ Keys: bson.D{{Key: "tenant_id", Value: 1}, {Key: "status", Value: 1}}, Options: options.Index().SetName("ix_products_tenant_status") },

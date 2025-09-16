@@ -5,6 +5,7 @@ import CustomMainBody from '../../components/common/CustomMainBody'
 import CustomTable, { CustomColumn } from '../../components/common/CustomTable'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Button, Chip, Dropdown, DropdownItem, DropdownMenu, DropdownTrigger, Tooltip } from '@heroui/react'
+import { useDateFormatter } from '../../hooks/useDateFormatter'
 import { EllipsisVerticalIcon, EyeIcon, PencilSquareIcon, TrashIcon, PhotoIcon, ArchiveBoxArrowDownIcon, PlusIcon, ChevronDownIcon, TagIcon, CubeIcon, BanknotesIcon, CurrencyDollarIcon } from '@heroicons/react/24/outline'
 import ConfirmModal from '../../components/common/ConfirmModal'
 import { useAuth } from '../../store/auth'
@@ -46,6 +47,7 @@ export default function ProductsPage() {
   const can = (p: string) => auth.permissions.includes(p)
   const { prefs } = usePreferences()
   const [showStats, setShowStats] = useState(true)
+  const { format } = useDateFormatter()
 
   const status = sp.get('status') || 'all'
   const lowStock = sp.get('low_stock') === '1'
@@ -83,13 +85,16 @@ export default function ProductsPage() {
     const volume = p.dimensions?.length && p.dimensions?.width && p.dimensions?.height
       ? Number(p.dimensions.length) * Number(p.dimensions.width) * Number(p.dimensions.height)
       : undefined
+    const categories = (p as any).category_names && (p as any).category_names.length
+      ? (p as any).category_names
+      : (p.category_name ? [p.category_name] : [])
     return {
       id: p.id,
       images: p.images || [],
       name: p.name,
       sku: p.sku,
       barcode: p.barcode,
-      category_name: p.category_name || '-',
+      category_name: categories && categories.length ? categories.join(', ') : '-',
       supplier_name: p.supplier_name || '-',
       brand_name: p.brand_name || '-',
       stock: p.stock,
@@ -100,26 +105,26 @@ export default function ProductsPage() {
       description: p.description || '-',
       volume: volume || '-',
       ikpu1: add.ikpu1 || add.IKPU1 || '-',
-      expiration_date: p.expiration_date || '-',
+      expiration_date: p.expiration_date ? format(p.expiration_date as any, { withTime: false }) : '-',
       status: p.status,
       is_active: p.is_active,
     }
   }), [data])
 
   const columns: CustomColumn[] = useMemo(() => [
-    { uid: 'photo', name: 'Photo' },
-    { uid: 'name', name: t('products.columns.name'), sortable: true },
-    { uid: 'sku', name: t('products.columns.sku'), sortable: true },
+    { uid: 'photo', name: 'Photo', className: 'w-[84px] min-w-[84px]' },
+    { uid: 'name', name: t('products.columns.name'), sortable: true, className: 'min-w-[140px] w-[140px]' },
+    { uid: 'sku', name: t('products.columns.sku'), sortable: true, className: 'min-w-[140px] w-[140px]' },
     { uid: 'barcode', name: t('repricing.detail.table.barcode','Barcode') },
-    { uid: 'category_name', name: t('products.columns.category') },
-    { uid: 'supplier_name', name: 'Suppliers' },
+    { uid: 'category_name', name: t('products.columns.category'), className: 'min-w-[220px]' },
+    { uid: 'supplier_name', name: 'Suppliers', className: 'min-w-[200px]' },
     { uid: 'stock', name: t('products.columns.stock'), sortable: true },
     { uid: 'cost_price', name: 'Supply price' },
     { uid: 'price', name: 'Retail price' },
     { uid: 'discount_price', name: 'Discount price' },
     { uid: 'brand_name', name: t('products.columns.brand') },
     { uid: 'description', name: 'Description' },
-    { uid: 'expiration_date', name: 'Expire date' },
+    { uid: 'expiration_date', name: 'Expire date', className: 'min-w-[180px]' },
     { uid: 'actions', name: t('products.columns.actions') },
   ], [t])
 
@@ -201,7 +206,7 @@ export default function ProductsPage() {
           <Chip className="capitalize" color={item.stock > 0 ? 'success' : item.stock === 0 ? 'warning' : 'danger'} size="sm" variant="flat">{item.stock}</Chip>
         )
       case 'status': {
-        const statusColors = { active: 'success', inactive: 'warning', discontinued: 'danger' } as const
+        const statusColors = { active: 'success', inactive: 'warning' } as const
         return (
           <Chip className="capitalize border-none gap-1 text-default-600" color={statusColors[item.status as keyof typeof statusColors] || 'default'} size="sm" variant="dot">{item.status}</Chip>
         )

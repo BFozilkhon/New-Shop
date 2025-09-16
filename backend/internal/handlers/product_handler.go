@@ -91,6 +91,12 @@ func (h *ProductHandler) List(c *fiber.Ctx) error {
     var isDirtyPtr *bool
     if v := c.Query("is_dirty_core", ""); v != "" { b := v=="1" || v=="true"; isDirtyPtr = &b }
 
+	// Support multiple category_ids[]=id in query
+	qa := c.Context().QueryArgs()
+	vals := qa.PeekMulti("category_ids[]")
+	catIDStrs := make([]string, 0, len(vals))
+	for _, v := range vals { if len(v) > 0 { catIDStrs = append(catIDStrs, string(v)) } }
+
 	ctx := context.WithValue(c.Context(), "low_stock", lowPtr)
 	ctx = context.WithValue(ctx, "zero_stock", zeroPtr)
 	ctx = context.WithValue(ctx, "archived", archivedPtr)
@@ -98,7 +104,7 @@ func (h *ProductHandler) List(c *fiber.Ctx) error {
     ctx = context.WithValue(ctx, "is_konsignatsiya", isKonsPtr)
     ctx = context.WithValue(ctx, "is_dirty_core", isDirtyPtr)
 
-	items, total, err := h.svc.List(ctx, page, limit, search, categoryID, brandID, supplierID, status, isActivePtr, isBundlePtr, minPricePtr, maxPricePtr, tenantID, storeID)
+	items, total, err := h.svc.List(ctx, page, limit, search, categoryID, catIDStrs, brandID, supplierID, status, isActivePtr, isBundlePtr, minPricePtr, maxPricePtr, tenantID, storeID)
 	if err != nil {
 		return err
 	}

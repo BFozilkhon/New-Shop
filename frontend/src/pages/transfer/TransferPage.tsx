@@ -62,6 +62,8 @@ export default function TransferPage() {
         onSearchChange={setSearch}
         onSearchClear={()=> setSearch('')}
         rightAction={<Button color="primary" onPress={()=> setOpen(true)}>{t('transfer.create','New transfer')}</Button>}
+        onCreate={()=> setOpen(true)}
+        createLabel={t('transfer.create','New transfer')}
       />
 
       <CreateTransferModal open={open} onOpenChange={setOpen} onCreated={(m)=> navigate(`/products/transfer/${m.id}`)} />

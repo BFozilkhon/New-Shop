@@ -18,8 +18,10 @@ export default function InventoryDetailPage() {
   const qc = useQueryClient()
   const [sp, setSp] = useSearchParams()
   const currentTab = (sp.get('tab') as 'results'|'scan') || 'results'
+  const currentPFParam = (sp.get('pf') as 'scanned'|'shortage'|'surplus'|'all') || 'scanned'
   const { data, refetch } = useQuery({ queryKey: ['inventory', id], queryFn: ()=> inventoriesService.get(String(id)), enabled: !!id })
   const isFinished = !!data?.finished_at
+  const isRejected = String(data?.status_id||'') === 'rejected'
 
   // Items state for scanning/results
   const [items, setItems] = useState<any[]>([])
@@ -30,16 +32,28 @@ export default function InventoryDetailPage() {
     const totalChecked = arr.reduce((s:any, x:any)=> s + Number(x.scanned||0), 0)
     const shortageCount = arr.filter((x:any)=> Number(x.scanned||0) < Number(x.declared||0)).length
     const surplusCount = arr.filter((x:any)=> Number(x.scanned||0) > Number(x.declared||0)).length
-    const postponedCount = Number(data?.postponed || 0)
     const differenceSum = Number(data?.difference_sum || 0)
-    return { totalChecked, shortageCount, surplusCount, postponedCount, differenceSum }
+    return { totalChecked, shortageCount, surplusCount, differenceSum }
   }, [items, data])
 
   // scanning UI state
   const [term, setTerm] = useState('')
+  const [productFilter, setProductFilter] = useState<'scanned'|'shortage'|'surplus'|'all'>(currentPFParam)
+  const [pageL, setPageL] = useState(1)
+  const [limitL, setLimitL] = useState(20)
+
+  useEffect(()=>{
+    const pf = (sp.get('pf') as 'scanned'|'shortage'|'surplus'|'all') || 'scanned'
+    setProductFilter(pf)
+  }, [sp])
+
   const products = useQuery({
-    queryKey: ['products-for-scan', term],
-    queryFn: async ()=> term ? productsService.list({ page:1, limit:10, search: term }) : Promise.resolve({ items: [], total: 0 } as any),
+    queryKey: ['products-for-scan', term, productFilter, pageL, limitL],
+    queryFn: async ()=> {
+      if (productFilter!=='all') return { items: [], total: 0 } as any
+      const params:any = { page: pageL, limit: limitL, search: term }
+      return productsService.list(params)
+    },
     placeholderData: (p)=> p,
   })
   const productResults = useMemo(()=> {
@@ -63,27 +77,54 @@ export default function InventoryDetailPage() {
     setTerm('')
   }
 
-  const saveMutation = useMutation({
-    mutationFn: async () => inventoriesService.update(String(id), { items: items.map(it=> ({
-      product_id: it.product_id,
-      product_name: it.product_name,
-      product_sku: it.product_sku,
-      barcode: it.barcode,
-      declared: Number(it.declared||0),
-      scanned: Number(it.scanned||0),
-      unit: it.unit,
-      price: Number(it.price||0),
-      cost_price: Number(it.cost_price||0),
-    })) }),
-    onSuccess: async ()=> { toast.success(t('inventory.toasts.saved')); await qc.invalidateQueries({ queryKey:['inventory', id] }); await refetch() },
-    onError: ()=> toast.error(t('inventory.toasts.save_failed'))
-  })
+  // Auto-add on full barcode scan (scanner workflow) — allow repeated scans infinitely
+  useEffect(()=>{
+    const code = (term||'').trim()
+    if (!code || !/^\d{8,14}$/.test(code)) return
+    const tmr = setTimeout(async ()=>{
+      try {
+        const res:any = await productsService.list({ page:1, limit:10, search: code })
+        const found = (res?.items||[]).find((p:any)=> String(p?.barcode||'') === code)
+        if (found) {
+          addProduct(found)
+          setProductFilter('scanned')
+          setSp(prev=>{ const n=new URLSearchParams(prev); n.set('pf','scanned'); return n })
+        }
+      } catch {}
+    }, 200)
+    return ()=> clearTimeout(tmr)
+  }, [term])
+
+  // Debounced autosave
+  useEffect(()=>{
+    if (!id || isFinished) return
+    const tmr = setTimeout(()=>{
+      inventoriesService.update(String(id), { items: items.map(it=> ({
+        product_id: it.product_id,
+        product_name: it.product_name,
+        product_sku: it.product_sku,
+        barcode: it.barcode,
+        declared: Number(it.declared||0),
+        scanned: Number(it.scanned||0),
+        unit: it.unit,
+        price: Number(it.price||0),
+        cost_price: Number(it.cost_price||0),
+      })) }).then(()=>{ /* silent */ }).catch(()=>{})
+    }, 350)
+    return ()=> clearTimeout(tmr)
+  }, [items, id, isFinished])
 
   const [confirmFinish, setConfirmFinish] = useState(false)
+  const [confirmReject, setConfirmReject] = useState(false)
   const finishMutation = useMutation({
     mutationFn: async () => inventoriesService.update(String(id), { items, finished: true }),
     onSuccess: async ()=> { toast.success(t('inventory.toasts.finished')); await qc.invalidateQueries({ queryKey:['inventory', id] }); await refetch() },
     onError: ()=> toast.error(t('inventory.toasts.finish_failed'))
+  })
+  const rejectMutation = useMutation({
+    mutationFn: async () => inventoriesService.update(String(id), { status_id: 'rejected' } as any),
+    onSuccess: async ()=> { toast.success(t('inventory.toasts.rejected') || 'Rejected'); await qc.invalidateQueries({ queryKey:['inventory', id] }); await refetch() },
+    onError: ()=> toast.error(t('inventory.toasts.reject_failed') || 'Failed to reject')
   })
 
   const onTabChange = (key: string) => setSp(prev => { const n = new URLSearchParams(prev); n.set('tab', key); return n })
@@ -137,14 +178,22 @@ export default function InventoryDetailPage() {
           <h1 className="text-xl font-semibold">{data?.name || t('inventory.header')}</h1>
           <div className="text-foreground/60 text-sm">{(data?.type||'FULL') === 'FULL' ? `${t('inventory.modal.full')} ${t('inventory.header').toLowerCase()}` : `${t('inventory.modal.partial')} ${t('inventory.header').toLowerCase()}`} • {data?.shop_name || '-'}</div>
         </div>
-        <div className="flex gap-2">
-          {currentTab === 'results' ? (
+        <div className="flex items-center gap-2">
+          {isRejected ? (
+            <span className="px-3 py-1 rounded-full bg-danger-100 text-danger-700 text-xs">{t('inventory.status.rejected') || 'Rejected'}</span>
+          ) : isFinished ? (
+            <span className="px-3 py-1 rounded-full bg-success-100 text-success-700 text-xs">{t('inventory.status.finished') || 'Finished'}</span>
+          ) : null}
+          {!isRejected ? (
             <Button color="primary" onPress={downloadReport}>{t('inventory.detail.report')}</Button>
           ) : null}
-          <Button variant="bordered" startContent={<ArrowLeftIcon className="w-4 h-4" />} onPress={()=> navigate(-1)}>{t('inventory.detail.back')}</Button>
-          {!isFinished ? (
+          {!isFinished && !isRejected ? (
+            <Button color="danger" onPress={()=> setConfirmReject(true)}>{t('inventory.detail.reject')}</Button>
+          ) : null}
+          {!isFinished && !isRejected ? (
             <Button color="success" onPress={()=> setConfirmFinish(true)}>{t('inventory.detail.finish')}</Button>
           ) : null}
+          <Button variant="bordered" startContent={<ArrowLeftIcon className="w-4 h-4" />} onPress={()=> navigate(-1)}>{t('inventory.detail.back')}</Button>
         </div>
       </div>
 
@@ -162,81 +211,67 @@ export default function InventoryDetailPage() {
           </div>
           <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
             <StatMoney icon={BanknotesIcon} title={t('inventory.detail.cards.surplus_sale')} value={items.reduce((s:any,x:any)=> s + Math.max(0, Number(x.scanned||0)-Number(x.declared||0)) * Number(x.price||0), 0)} />
-            <StatCard icon={CubeIcon} title={t('inventory.detail.cards.postponed')} value={`${stats.postponedCount}`} unit={t('inventory.detail.cards.units')} />
           </div>
         </Tab>
         <Tab key="scan" title={<div className="flex-1 text-center">{t('inventory.detail.tabs.scan')}</div>}>
           {!isFinished ? (
-            <>
-              <div className="flex justify-between gap-3 items-end">
-                <Input isClearable value={term} onValueChange={setTerm} onClear={()=>setTerm('')} onKeyDown={(e)=>{ if(e.key==='Enter' && productResults[0]) addProduct(productResults[0]) }} className="w-full sm:max-w-[44%]" classNames={{ inputWrapper: 'h-11 bg-background ring-1 ring-foreground/40 focus-within:ring-foreground/50 rounded-lg', input: 'text-foreground' }} placeholder={t('inventory.detail.scan.placeholder')} size="md"/>
-                <div className="flex gap-2">
-                  <Button variant="flat" onPress={()=> saveMutation.mutate()} isDisabled={saveMutation.isPending}>{t('inventory.detail.scan.save')}</Button>
-                </div>
-              </div>
-              {term && (
-                <div className="border rounded-md overflow-hidden mt-3">
-                  <div className="px-3 py-2 text-sm bg-content2 border-b">{t('inventory.detail.scan.found')}: {productResults.length}{products.isLoading? ' (searching...)':''}</div>
-                  <div className="max-h-72 overflow-auto divide-y">
-                    {productResults.map((p:any)=> (
-                      <div key={p.id} className="flex items-center justify-between px-3 py-2 hover:bg-content2/50">
-                        <div className="min-w-0"><div className="text-sm font-medium truncate">{p.name}</div><div className="text-xs text-foreground/60">SKU: {p.sku || '-'} • Barcode: {p.barcode || '-'}</div></div>
-                        <Button color="primary" size="sm" onPress={()=> addProduct(p)}>{t('inventory.detail.scan.add')}</Button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-              <div className="overflow-auto border rounded-md mt-4">
-                <table className="min-w-full divide-y divide-foreground/10">
-                  <thead className="bg-background">
-                    <tr>
-                      <th className="px-4 py-2 text-left text-xs">{t('inventory.detail.table_scan.name')}</th>
-                      <th className="px-4 py-2 text-left text-xs">{t('inventory.detail.table_scan.sku')}</th>
-                      <th className="px-4 py-2 text-left text-xs">{t('inventory.detail.table_scan.barcode')}</th>
-                      <th className="px-4 py-2 text-left text-xs">{t('inventory.detail.table_scan.declared')}</th>
-                      <th className="px-4 py-2 text-left text-xs">{t('inventory.detail.table_scan.scanned')}</th>
-                      <th className="px-4 py-2 text-left text-xs">{t('inventory.detail.table_scan.diff')}</th>
-                      <th className="px-4 py-2 text-left text-xs">{t('inventory.detail.table_scan.diff_amount')}</th>
-                      <th className="px-4 py-2 text-left text-xs">{t('inventory.detail.table_scan.activity')}</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-foreground/10">
-                    {items.map((it:any, idx:number)=> {
-                      const declared = Number(it.declared||0)
-                      const scanned = Number(it.scanned||0)
-                      const diffQty = scanned - declared
-                      const amount = diffQty > 0 ? diffQty * Number(it.price||0) : diffQty < 0 ? Math.abs(diffQty) * Number(it.cost_price||0) * -1 : 0
-                      return (
-                        <tr key={idx}>
-                          <td className="px-4 py-2 text-sm">{it.product_name}</td>
-                          <td className="px-4 py-2 text-sm">{it.product_sku}</td>
-                          <td className="px-4 py-2 text-sm">{it.barcode}</td>
-                          <td className="px-4 py-2 text-sm">{declared}</td>
-                          <td className="px-4 py-2 text-sm w-40">
-                            <Input type="number" size="sm" variant="bordered" value={String(scanned)} onValueChange={(v)=> setItems(prev=> { const next=[...prev]; next[idx] = { ...next[idx], scanned: Number(v||0), barcode: it.barcode }; return next })} classNames={{ inputWrapper:'h-9' }} />
-                          </td>
-                          <td className="px-4 py-2 text-sm">
-                            <span className={`${diffQty>0?'text-success-600':diffQty<0?'text-danger-600':'text-foreground/60'}`}>{diffQty>0?`+${diffQty}`:diffQty<0?diffQty:'0'}</span>
-                          </td>
-                          <td className="px-4 py-2 text-sm">
-                            <span className={`${amount>0?'text-success-600':amount<0?'text-danger-600':'text-foreground/60'}`}>{Intl.NumberFormat('ru-RU').format(amount)}</span>
-                          </td>
-                          <td className="px-4 py-2 text-sm">
-                            <div className="flex items-center gap-2">
-                              <BadgeDot color={diffQty>0? 'success':'default'} count={diffQty>0?1:0} label="+" />
-                              <BadgeDot color={diffQty<0? 'danger':'default'} count={diffQty<0?1:0} label="-" />
-                              <BadgeDot color={diffQty===0? 'primary':'default'} count={diffQty===0?1:0} label="=" />
-                            </div>
-                          </td>
-                        </tr>
-                      )
-                    })}
-                    {!items.length && (<tr><td className="px-4 py-6 text-sm text-foreground/60" colSpan={8}>{t('common.no_results')}</td></tr>)}
-                  </tbody>
-                </table>
-              </div>
-            </>
+            <div className="mt-2">
+              <CustomTable
+                columns={([
+                  { uid:'product_name', name:t('inventory.detail.table_scan.name'), className:'w-[30%] min-w-[260px]' },
+                  { uid:'product_sku', name:t('inventory.detail.table_scan.sku') },
+                  { uid:'barcode', name:t('inventory.detail.table_scan.barcode') },
+                  { uid:'cost_price', name:t('inventory.detail.table_scan.supply_price') || 'Supply price' },
+                  { uid:'price', name:t('inventory.detail.table_scan.retail_price') || 'Retail price' },
+                  { uid:'declared', name:t('inventory.detail.table_scan.declared') },
+                  { uid:'scanned', name:t('inventory.detail.table_scan.scanned') },
+                  { uid:'diff', name:t('inventory.detail.table_scan.diff') },
+                  { uid:'diff_amount', name:t('inventory.detail.table_scan.diff_amount') },
+                ] as CustomColumn[])}
+                items={(()=>{
+                  const withDiff = (list:any[]) => list.map((x:any)=> ({ ...x, diff: Number(x.scanned||0) - Number(x.declared||0), diff_amount: (():number=>{ const dq=Number(x.scanned||0)-Number(x.declared||0); return dq>0? dq*Number(x.price||0) : dq<0? Math.abs(dq)*Number(x.cost_price||0)*-1 : 0 })() }))
+                  if (productFilter==='scanned') return withDiff((items||[]).filter((x:any)=> Number(x.scanned||0) > 0))
+                  if (productFilter==='shortage') return withDiff((items||[]).filter((x:any)=> Number(x.scanned||0) < Number(x.declared||0)))
+                  if (productFilter==='surplus') return withDiff((items||[]).filter((x:any)=> Number(x.scanned||0) > Number(x.declared||0)))
+                  return withDiff(((products.data as any)?.items||[]).map((p:any)=> {
+                    const it = (items||[]).find((x:any)=> x.product_id===p.id || x.barcode===p.barcode)
+                    return { product_id:p.id, product_name:p.name, product_sku:p.sku, barcode:p.barcode, declared:Number(p.stock||0), scanned:Number(it?.scanned||0), unit:'pcs', price:Number(p.price||0), cost_price:Number(p.cost_price||0) }
+                  }))
+                })()}
+                total={productFilter==='all' ? Number((products.data as any)?.total||0) : (productFilter==='scanned' ? (items||[]).filter((x:any)=> Number(x.scanned||0) > 0).length : (productFilter==='shortage' ? (items||[]).filter((x:any)=> Number(x.scanned||0) < Number(x.declared||0)).length : (items||[]).filter((x:any)=> Number(x.scanned||0) > Number(x.declared||0)).length))}
+                page={productFilter==='all'? pageL : 1}
+                limit={productFilter==='all'? limitL : Math.max(10, Math.min(50, (items||[]).length))}
+                onPageChange={setPageL}
+                onLimitChange={setLimitL}
+                searchValue={term}
+                onSearchChange={setTerm}
+                onSearchClear={()=> setTerm('')}
+                renderCell={(row:any, key:string)=> {
+                  switch(key){
+                    case 'scanned': return (
+                      <Input type="number" size="sm" variant="bordered" value={String(row.scanned||0)} onValueChange={(v)=> setItems(prev=> { const idx=prev.findIndex((x:any)=> x.product_id===row.product_id||x.barcode===row.barcode); const next=[...prev]; if(idx>=0){ next[idx]={...next[idx], scanned:Number(v||0)} } else { next.push({ product_id:row.product_id, product_name:row.product_name, product_sku:row.product_sku, barcode:row.barcode, declared:row.declared, scanned:Number(v||0), unit:'pcs', price:row.price, cost_price:row.cost_price }) } return next })} classNames={{ inputWrapper:'h-9' }} />
+                    )
+                    case 'diff': {
+                      const v = Number(row.diff||0)
+                      const cls = v>0?'text-success-600':v<0?'text-danger-600':'text-foreground/60'
+                      return <span className={cls}>{v>0?`+${v}`:String(v)}</span>
+                    }
+                    case 'diff_amount': {
+                      const val = Number(row.diff_amount||0)
+                      const cls = val>0?'text-success-600':val<0?'text-danger-600':'text-foreground/60'
+                      return <span className={cls}>{Intl.NumberFormat('ru-RU').format(val)}</span>
+                    }
+                    case 'price': return <span>{Intl.NumberFormat('ru-RU').format(Number(row.price||0))}</span>
+                    case 'cost_price': return <span>{Intl.NumberFormat('ru-RU').format(Number(row.cost_price||0))}</span>
+                    default: return String(row[key] ?? '')
+                  }
+                }}
+                isLoading={productFilter==='all' && products.isLoading}
+                topTabs={[{key:'scanned',label:'Scanned'},{key:'shortage',label:'Shortage'},{key:'surplus',label:'Surplus'},{key:'all',label:'All stocks'}]}
+                activeTabKey={productFilter}
+                onTabChange={(k)=> { setProductFilter(k as any); setSp(prev=> { const n=new URLSearchParams(prev); n.set('pf', String(k)); return n }) }}
+              />
+            </div>
           ) : (
             <div className="mt-2">
               <CustomTable
@@ -269,7 +304,7 @@ export default function InventoryDetailPage() {
                 }}
                 isLoading={false}
               />
-            </div>
+          </div>
           )}
         </Tab>
       </Tabs>
@@ -282,6 +317,15 @@ export default function InventoryDetailPage() {
         confirmColor="success"
         onConfirm={()=> finishMutation.mutate()}
         onClose={()=> setConfirmFinish(false)}
+      />
+      <ConfirmModal
+        isOpen={confirmReject}
+        title={t('inventory.detail.confirm_reject_title') || 'Reject inventory?'}
+        description={t('inventory.detail.confirm_reject_desc') || 'This will mark inventory as rejected.'}
+        confirmText={t('inventory.detail.confirm_reject_btn') || 'Reject'}
+        confirmColor="danger"
+        onConfirm={()=> rejectMutation.mutate()}
+        onClose={()=> setConfirmReject(false)}
       />
     </CustomMainBody>
   )

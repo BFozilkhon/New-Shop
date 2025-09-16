@@ -205,7 +205,7 @@ func main() {
 	importHistorySvc := services.NewImportHistoryService(importHistoryRepo)
 	paymentSvc := services.NewPaymentService(paymentRepo)
 	statsSvc := services.NewStatsService(statsRepo)
-	inventorySvc := services.NewInventoryService(inventoryRepo, storeRepo)
+	inventorySvc := services.NewInventoryService(inventoryRepo, storeRepo, productRepo)
 	writeOffSvc := services.NewWriteOffService(writeOffRepo, storeRepo, productRepo)
 	repricingSvc := services.NewRepricingService(repricingRepo, storeRepo, productRepo)
 	transferSvc := services.NewTransferService(transferRepo, storeRepo, productRepo)

@@ -37,15 +37,13 @@ export default function AttributesTab() {
       qc.invalidateQueries({ queryKey: ['attributes'] })
       setConfirm({ open: false })
     },
-    onError: (error: any) => {
-      toast.error(error?.response?.data?.message || t('catalog.toast.delete_failed', { entity: t('catalog.entities.attribute') }))
-    }
+    onError: (error: any) => { toast.error(error?.response?.data?.message || t('catalog.toast.delete_failed', { entity: t('catalog.entities.attribute') })) }
   })
 
   const items = useMemo(() => (data?.items || []).map((a: Attribute) => ({
     id: a.id,
     name: a.name,
-    value: a.value,
+    value: (a.values || []).join(', '),
     status: a.is_active ? t('catalog.common.active') : t('catalog.common.inactive'),
     created_at: new Date(a.created_at).toLocaleDateString(),
   })), [data, t])

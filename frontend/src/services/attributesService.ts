@@ -3,7 +3,7 @@ import { apiClient } from './base/apiClient'
 export type Attribute = {
   id: string
   name: string
-  value: string
+  values: string[]
   is_active: boolean
   is_deleted: boolean
   created_at: string
@@ -19,10 +19,10 @@ export const attributesService = {
   get: (id: string) =>
     apiClient.get<{ data: Attribute }>(`/api/attributes/${id}`).then(r => r.data.data),
   
-  create: (payload: { name: string; value: string }) =>
+  create: (payload: { name: string; values: string[] }) =>
     apiClient.post<{ data: Attribute }>(`/api/attributes`, payload).then(r => r.data.data),
   
-  update: (id: string, payload: Partial<{ name: string; value: string; is_active: boolean }>) =>
+  update: (id: string, payload: Partial<{ name: string; values: string[]; is_active: boolean }>) =>
     apiClient.patch<{ data: Attribute }>(`/api/attributes/${id}`, payload).then(r => r.data.data),
   
   remove: (id: string) =>

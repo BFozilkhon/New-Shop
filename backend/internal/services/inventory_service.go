@@ -17,9 +17,10 @@ import (
 type InventoryService struct {
 	repo *repositories.InventoryRepository
 	stores *repositories.StoreRepository
+	productRepo *repositories.ProductRepository
 }
 
-func NewInventoryService(repo *repositories.InventoryRepository, stores *repositories.StoreRepository) *InventoryService { return &InventoryService{repo: repo, stores: stores} }
+func NewInventoryService(repo *repositories.InventoryRepository, stores *repositories.StoreRepository, productRepo *repositories.ProductRepository) *InventoryService { return &InventoryService{repo: repo, stores: stores, productRepo: productRepo} }
 
 func (s *InventoryService) List(ctx context.Context, f models.InventoryFilterRequest, tenantID string) ([]models.Inventory, int64, error) {
 	var fromPtr, toPtr *time.Time
@@ -83,6 +84,7 @@ func (s *InventoryService) Update(ctx context.Context, id string, body models.Up
 	update := bson.M{}
 	if strings.TrimSpace(body.Name) != "" { update["name"] = body.Name }
 	if strings.TrimSpace(body.StatusID) != "" { update["status_id"] = body.StatusID }
+	var bodyItems []models.InventoryItemInput
 	if body.Items != nil {
 		items := make([]models.InventoryItem, 0, len(body.Items))
 		var total float64
@@ -104,10 +106,30 @@ func (s *InventoryService) Update(ctx context.Context, id string, body models.Up
 		update["shortage"] = shortage
 		update["surplus"] = surplus
 		update["difference_sum"] = differenceSum
+		bodyItems = body.Items
 	}
-	if body.Finished { now := time.Now().UTC(); update["finished_at"] = now; update["finished_by"] = user }
+	if body.Finished { now := time.Now().UTC(); update["finished_at"] = now; update["finished_by"] = user; update["status_id"] = "finished" }
 	m, err := s.repo.Update(ctx, oid, tenantID, update)
 	if err != nil { return nil, utils.Internal("INVENTORY_UPDATE_FAILED", "Unable to update inventory", err) }
+	// On finish: update product stocks to match scanned values
+	if body.Finished && s.productRepo != nil {
+		itemsToApply := bodyItems
+		if itemsToApply == nil || len(itemsToApply) == 0 {
+			if m2, err2 := s.repo.Get(ctx, oid, tenantID); err2 == nil && m2 != nil {
+				itemsToApply = make([]models.InventoryItemInput, 0, len(m2.Items))
+				for _, it := range m2.Items {
+					itemsToApply = append(itemsToApply, models.InventoryItemInput{ ProductID: it.ProductID.Hex(), ProductName: it.ProductName, ProductSKU: it.ProductSKU, Barcode: it.Barcode, Declared: it.Declared, Scanned: it.Scanned, Unit: it.Unit, Price: it.Price, CostPrice: it.CostPrice })
+				}
+			}
+		}
+		for _, it := range itemsToApply {
+			if it.ProductID == "" { continue }
+			pid, err := primitive.ObjectIDFromHex(it.ProductID)
+			if err != nil { continue }
+			// Set actual stock equal to scanned
+			_ = s.productRepo.UpdateStock(ctx, pid, tenantID, int(it.Scanned))
+		}
+	}
 	return m, nil
 }
 

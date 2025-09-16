@@ -4,6 +4,7 @@ export type Characteristic = {
   id: string
   name: string
   type: string
+  values?: string[]
   is_active: boolean
   is_deleted: boolean
   created_at: string
@@ -19,10 +20,10 @@ export const characteristicsService = {
   get: (id: string) =>
     apiClient.get<{ data: Characteristic }>(`/api/characteristics/${id}`).then(r => r.data.data),
   
-  create: (payload: { name: string; type?: string }) =>
+  create: (payload: { name: string; type?: string; values?: string[] }) =>
     apiClient.post<{ data: Characteristic }>(`/api/characteristics`, payload).then(r => r.data.data),
   
-  update: (id: string, payload: Partial<{ name: string; type: string; is_active: boolean }>) =>
+  update: (id: string, payload: Partial<{ name: string; type: string; values: string[]; is_active: boolean }>) =>
     apiClient.patch<{ data: Characteristic }>(`/api/characteristics/${id}`, payload).then(r => r.data.data),
   
   remove: (id: string) =>

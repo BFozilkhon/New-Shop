@@ -305,6 +305,7 @@ const ru = {
     delete_confirm_desc: 'Вы уверены, что хотите удалить «{{name}}»? Это действие нельзя отменить.',
     form: {
       main: 'Основная информация', prices: 'Цены', quantity: 'Количество товара', characteristics: 'Характеристики',
+      variations: 'Вариации',
       product_name: 'Название товара', product_name_ph: 'Введите название товара',
       sku: 'Артикул', sku_ph: 'Введите артикул', part_number: 'Парт-номер', part_number_ph: 'Введите парт-номер',
       barcode: 'Штрихкод', barcode_ph: 'Введите штрихкод',

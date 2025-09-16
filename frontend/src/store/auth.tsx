@@ -55,26 +55,37 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     }
     hydrate()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [auth.token])
 
   const login = async (email: string, password: string, remember?: boolean) => {
     const res = await authService.login({ email, password, remember })
-    let permissions: string[] = []
-    if (res.user?.role_id) {
-      try {
-        const role = await rolesService.get(res.user.role_id)
-        permissions = role.permissions || []
-      } catch {}
-    }
-    setAuth({ token: res.token, user: res.user, permissions })
+    // store token first so subsequent calls include Authorization header
     localStorage.setItem('token', res.token)
-    localStorage.setItem('user', JSON.stringify(res.user))
-    localStorage.setItem('permissions', JSON.stringify(permissions))
+
+    let nextUser: User = res.user
+    let nextPermissions: string[] = []
+
+    // prefer server-side me endpoint to get unified user & permissions
+    try {
+      const me = await authService.me()
+      nextUser = me.user
+      nextPermissions = me.permissions || []
+    } catch {
+      if (res.user?.role_id) {
+        try {
+          const role = await rolesService.get(res.user.role_id)
+          nextPermissions = role.permissions || []
+        } catch {}
+      }
+    }
+
+    setAuth({ token: res.token, user: nextUser, permissions: nextPermissions })
+    localStorage.setItem('user', JSON.stringify(nextUser))
+    localStorage.setItem('permissions', JSON.stringify(nextPermissions))
     // hydrate prefs on login
-    if (typeof res.user.pref_service_mode === 'boolean') localStorage.setItem('pref_service_mode', res.user.pref_service_mode ? '1' : '0')
-    if (res.user.pref_language) {
-      const lang = (res.user.pref_language || 'EN').toLowerCase()
+    if (typeof nextUser.pref_service_mode === 'boolean') localStorage.setItem('pref_service_mode', nextUser.pref_service_mode ? '1' : '0')
+    if (nextUser.pref_language) {
+      const lang = (nextUser.pref_language || 'EN').toLowerCase()
       localStorage.setItem('pref_language', lang.toUpperCase())
       try { document.documentElement.lang = lang } catch {}
       try { i18n.changeLanguage(lang) } catch {}

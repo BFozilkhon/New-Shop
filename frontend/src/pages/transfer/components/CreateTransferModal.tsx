@@ -45,13 +45,13 @@ export default function CreateTransferModal({ open, onOpenChange, onCreated }: {
                 </div>
                 <div>
                   <div className="text-sm mb-2">{t('transfer.create_modal.departure','Departure store')}</div>
-                  <Select aria-label="departure-store" items={storeItems} selectedKeys={depId?[depId]:[]} onSelectionChange={(keys)=> setDepId(Array.from(keys)[0] as string)} classNames={{trigger:'h-14', popoverContent:'z-[1100]'}}>
+                  <Select aria-label="departure-store" variant="bordered" labelPlacement="inside" placeholder={t('transfer.create_modal.departure','Departure store')} items={storeItems} selectedKeys={depId?[depId]:[]} onSelectionChange={(keys)=> setDepId(Array.from(keys)[0] as string)} classNames={{trigger:'h-14', popoverContent:'z-[1100]'}}>
                     {item => <SelectItem key={item.key}>{item.label}</SelectItem>}
                   </Select>
                 </div>
                 <div>
                   <div className="text-sm mb-2">{t('transfer.create_modal.arrival','Arrival store')}</div>
-                  <Select aria-label="arrival-store" items={arrivalItems} selectedKeys={arrId?[arrId]:[]} onSelectionChange={(keys)=> setArrId(Array.from(keys)[0] as string)} classNames={{trigger:'h-14', popoverContent:'z-[1100]'}}>
+                  <Select aria-label="arrival-store" variant="bordered" labelPlacement="inside" placeholder={t('transfer.create_modal.arrival','Arrival store')} items={arrivalItems} selectedKeys={arrId?[arrId]:[]} onSelectionChange={(keys)=> setArrId(Array.from(keys)[0] as string)} classNames={{trigger:'h-14', popoverContent:'z-[1100]'}}>
                     {item => <SelectItem key={item.key}>{item.label}</SelectItem>}
                   </Select>
                 </div>

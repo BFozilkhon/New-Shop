@@ -18,6 +18,7 @@ type ProductListParams struct {
 	Sort       bson.D
 	Search     string
 	CategoryID string
+	CategoryIDs []string
 	BrandID    string
 	SupplierID string
 	Status     string
@@ -55,78 +56,76 @@ func (r *ProductRepository) List(ctx context.Context, p ProductListParams) ([]mo
 		p.Sort = bson.D{{Key: "created_at", Value: -1}}
 	}
 
-	filter := bson.M{"tenant_id": p.TenantID}
+	and := []bson.M{{"tenant_id": p.TenantID}}
 	
 	if p.Search != "" {
-		filter["$or"] = []bson.M{
+		and = append(and, bson.M{"$or": []bson.M{
 			{"name": bson.M{"$regex": p.Search, "$options": "i"}},
 			{"sku": bson.M{"$regex": p.Search, "$options": "i"}},
 			{"description": bson.M{"$regex": p.Search, "$options": "i"}},
 			{"barcode": bson.M{"$regex": p.Search, "$options": "i"}},
-		}
+		}})
 	}
 	
-	if p.CategoryID != "" {
-		if oid, err := primitive.ObjectIDFromHex(p.CategoryID); err == nil {
-			filter["category_id"] = oid
+	// Category filters: support single id and multiple ids; match either category_id or any in category_ids
+	if p.CategoryID != "" || len(p.CategoryIDs) > 0 {
+		oids := []primitive.ObjectID{}
+		if p.CategoryID != "" {
+			if oid, err := primitive.ObjectIDFromHex(p.CategoryID); err == nil { oids = append(oids, oid) }
+		}
+		for _, s := range p.CategoryIDs {
+			if s == "" { continue }
+			if oid, err := primitive.ObjectIDFromHex(s); err == nil { oids = append(oids, oid) }
+		}
+		if len(oids) > 0 {
+			and = append(and, bson.M{"$or": []bson.M{
+				{"category_id": bson.M{"$in": oids}},
+				{"category_ids": bson.M{"$in": oids}},
+			}})
 		}
 	}
 	
 	if p.BrandID != "" {
 		if oid, err := primitive.ObjectIDFromHex(p.BrandID); err == nil {
-			filter["brand_id"] = oid
+			and = append(and, bson.M{"brand_id": oid})
 		}
 	}
 	
 	if p.SupplierID != "" {
 		if oid, err := primitive.ObjectIDFromHex(p.SupplierID); err == nil {
-			filter["supplier_id"] = oid
+			and = append(and, bson.M{"supplier_id": oid})
 		}
 	}
 	
-	if p.Status != "" {
-		filter["status"] = p.Status
-	}
-	
-	if p.IsActive != nil {
-		filter["is_active"] = *p.IsActive
-	}
-	
-	if p.IsBundle != nil {
-		filter["is_bundle"] = *p.IsBundle
-	}
+	if p.Status != "" { and = append(and, bson.M{"status": p.Status}) }
+	if p.IsActive != nil { and = append(and, bson.M{"is_active": *p.IsActive}) }
+	if p.IsBundle != nil { and = append(and, bson.M{"is_bundle": *p.IsBundle}) }
 
-    if p.Archived != nil { filter["archived"] = *p.Archived } else { filter["archived"] = bson.M{"$ne": true} }
+	if p.Archived != nil { and = append(and, bson.M{"archived": *p.Archived}) } else { and = append(and, bson.M{"archived": bson.M{"$ne": true}}) }
 
-    if p.IsRealizatsiya != nil { filter["is_realizatsiya"] = *p.IsRealizatsiya }
-    if p.IsKonsignatsiya != nil { filter["is_konsignatsiya"] = *p.IsKonsignatsiya }
-    if p.IsDirtyCore != nil { filter["is_dirty_core"] = *p.IsDirtyCore }
+	if p.IsRealizatsiya != nil { and = append(and, bson.M{"is_realizatsiya": *p.IsRealizatsiya}) }
+	if p.IsKonsignatsiya != nil { and = append(and, bson.M{"is_konsignatsiya": *p.IsKonsignatsiya}) }
+	if p.IsDirtyCore != nil { and = append(and, bson.M{"is_dirty_core": *p.IsDirtyCore}) }
 	
 	// Price range filter
 	if p.MinPrice != nil || p.MaxPrice != nil {
 		priceFilter := bson.M{}
-		if p.MinPrice != nil {
-			priceFilter["$gte"] = *p.MinPrice
-		}
-		if p.MaxPrice != nil {
-			priceFilter["$lte"] = *p.MaxPrice
-		}
-		filter["price"] = priceFilter
+		if p.MinPrice != nil { priceFilter["$gte"] = *p.MinPrice }
+		if p.MaxPrice != nil { priceFilter["$lte"] = *p.MaxPrice }
+		and = append(and, bson.M{"price": priceFilter})
 	}
 
-    if p.StoreID != "" {
-        if oid, err := primitive.ObjectIDFromHex(p.StoreID); err == nil {
-            filter["store_id"] = oid
-        }
-    }
+	if p.StoreID != "" {
+		if oid, err := primitive.ObjectIDFromHex(p.StoreID); err == nil {
+			and = append(and, bson.M{"store_id": oid})
+		}
+	}
 
-    if p.ZeroStock != nil && *p.ZeroStock {
-        filter["stock"] = 0
-    }
-    if p.LowStock != nil && *p.LowStock {
-        // stock < min_stock
-        filter["$expr"] = bson.M{"$lt": bson.A{"$stock", "$min_stock"}}
-    }
+	if p.ZeroStock != nil && *p.ZeroStock { and = append(and, bson.M{"stock": 0}) }
+	if p.LowStock != nil && *p.LowStock { and = append(and, bson.M{"$expr": bson.M{"$lt": bson.A{"$stock", "$min_stock"}}}) }
+
+	filter := bson.M{}
+	if len(and) == 1 { filter = and[0] } else { filter = bson.M{"$and": and} }
 
 	opts := options.Find().SetSkip((p.Page-1)*p.Limit).SetLimit(p.Limit).SetSort(p.Sort)
 	cur, err := r.col.Find(ctx, filter, opts)

@@ -63,7 +63,7 @@ function Protected({ children }: { children: JSX.Element }) {
 
 function WithServiceMode({ children }: { children: JSX.Element }) {
   const { prefs } = usePreferences()
-  return prefs.serviceMode ? children : <Navigate to="/dashboard" replace />
+  return prefs.serviceMode ? children : <Navigate to="/products/catalog" replace />
 }
 
 const router = createBrowserRouter([
@@ -71,7 +71,7 @@ const router = createBrowserRouter([
     path: '/',
     element: <Protected><AppLayout /></Protected>,
     children: [
-      { index: true, element: <Navigate to="/dashboard" replace /> },
+      { index: true, element: <Navigate to="/products/catalog" replace /> },
       { path: 'dashboard', element: <div /> },
       { path: 'products/suppliers', element: <SuppliersPage /> },
       { path: 'products/suppliers/create', element: <SupplierCreatePage /> },

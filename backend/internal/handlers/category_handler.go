@@ -30,8 +30,8 @@ func (h *CategoryHandler) List(c *fiber.Ctx) error {
 	page, _ := strconv.ParseInt(c.Query("page", "1"), 10, 64)
 	limit, _ := strconv.ParseInt(c.Query("limit", "10"), 10, 64)
 	search := c.Query("search", "")
-	parentID := ""
-	levelStr := ""
+	parentID := c.Query("parent_id", "")
+	levelStr := c.Query("level", "")
 
 	var isActivePtr *bool
 	if v := c.Query("is_active", ""); v != "" {
@@ -65,8 +65,11 @@ func (h *CategoryHandler) List(c *fiber.Ctx) error {
 }
 
 func (h *CategoryHandler) GetTree(c *fiber.Ctx) error {
-	// Tree removed: return empty list for backwards compatibility
-	return c.JSON(utils.SuccessResponse[[]models.CategoryDTO]{ Data: []models.CategoryDTO{} })
+	tree, err := h.svc.GetTree(c.Context())
+	if err != nil {
+		return err
+	}
+	return c.JSON(utils.SuccessResponse[[]models.CategoryDTO]{ Data: tree })
 }
 
 func (h *CategoryHandler) Get(c *fiber.Ctx) error {

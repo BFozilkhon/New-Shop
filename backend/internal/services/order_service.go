@@ -60,6 +60,8 @@ func (s *OrderService) Create(ctx context.Context, body models.CreateOrderReques
 	if body.ShopID == "" { return nil, utils.BadRequest("VALIDATION_ERROR", "Shop is required", nil) }
 
 	order := &models.Order{ TenantID: tenantID, Name: body.Name, Comment: body.Comment, Type: ifEmpty(body.Type, "supplier_order"), SupplierID: body.SupplierID, ShopID: body.ShopID, CreatedBy: createdBy, Payments: []models.OrderPayment{}, Items: []models.OrderItem{} }
+	// generate short external id if not provided
+	if order.ExternalID == 0 { order.ExternalID = time.Now().Unix()%1000000 }
 
 	// Enrich supplier/shop minimal data if present
 	if oid, err := primitive.ObjectIDFromHex(body.SupplierID); err == nil {
@@ -104,6 +106,18 @@ func (s *OrderService) Create(ctx context.Context, body models.CreateOrderReques
 func (s *OrderService) Update(ctx context.Context, id string, body models.UpdateOrderRequest, tenantID string, user models.OrderUser) (*models.Order, error) {
 	oid, err := primitive.ObjectIDFromHex(id)
 	if err != nil { return nil, utils.BadRequest("INVALID_ID", "Invalid order id", nil) }
+
+	current, err := s.repo.Get(ctx, oid, tenantID)
+	if err != nil { return nil, utils.NotFound("ORDER_NOT_FOUND", "Order not found", err) }
+	// If already accepted (finished and not rejected), disallow edits other than no-op
+	if current.IsFinished && strings.ToLower(current.StatusID) != "rejected" {
+		// Allow idempotent calls without modifications
+		if strings.TrimSpace(body.Action) == "" {
+			return current, nil
+		}
+		return nil, utils.BadRequest("ORDER_LOCKED", "Order already accepted and cannot be changed", nil)
+	}
+
 	upd := bson.M{}
 	if strings.TrimSpace(body.Name) != "" { upd["name"] = body.Name }
 	if body.Comment != "" { upd["comment"] = body.Comment }
@@ -134,6 +148,31 @@ func (s *OrderService) Update(ctx context.Context, id string, body models.Update
 	if body.TotalRetailPrice != 0 { upd["total_retail_price"] = body.TotalRetailPrice }
 	if body.TotalPaidAmount != 0 { upd["total_paid_amount"] = body.TotalPaidAmount }
 
+	// Approve/Reject actions
+	if body.Action == "approve" || body.Action == "reject" {
+		if body.Action == "approve" && !current.IsFinished {
+			// For each item: increase stock and optionally update prices
+			for _, it := range current.Items {
+				if it.ProductID == primitive.NilObjectID { continue }
+				p, err := s.productRepo.Get(ctx, it.ProductID, tenantID)
+				if err != nil { if p2, e2 := s.productRepo.GetByID(ctx, it.ProductID); e2 == nil { p = p2 } else { return nil, utils.BadRequest("PRODUCT_NOT_FOUND", "Product not found for order", err) } }
+				newStock := p.Stock + int(it.Quantity)
+				if err := s.productRepo.UpdateStock(ctx, p.ID, p.TenantID, newStock); err != nil { return nil, utils.Internal("PRODUCT_STOCK_UPDATE_FAILED", "Failed to update product stock", err) }
+				// update prices if provided (>0)
+				if it.SupplyPrice > 0 || it.RetailPrice > 0 {
+					_ = s.productRepo.UpdatePrices(ctx, p.ID, p.TenantID, it.SupplyPrice, it.RetailPrice)
+				}
+			}
+			upd["is_finished"] = true
+			upd["status_id"] = "accepted"
+			upd["accepted_by"] = user
+			upd["accepting_date"] = time.Now().UTC().Format(time.RFC3339)
+		} else if body.Action == "reject" && !current.IsFinished {
+			upd["is_finished"] = true
+			upd["status_id"] = "rejected"
+		}
+	}
+
 	updated, err := s.repo.Update(ctx, oid, tenantID, upd)
 	if err != nil { return nil, utils.Internal("ORDER_UPDATE_FAILED", "Unable to update order", err) }
 	return updated, nil
@@ -142,6 +181,11 @@ func (s *OrderService) Update(ctx context.Context, id string, body models.Update
 func (s *OrderService) Delete(ctx context.Context, id string, tenantID string) error {
 	oid, err := primitive.ObjectIDFromHex(id)
 	if err != nil { return utils.BadRequest("INVALID_ID", "Invalid order id", nil) }
+	current, err := s.repo.Get(ctx, oid, tenantID)
+	if err != nil { return utils.NotFound("ORDER_NOT_FOUND", "Order not found", err) }
+	if current.IsFinished && strings.ToLower(current.StatusID) != "rejected" {
+		return utils.BadRequest("ORDER_LOCKED", "Accepted orders cannot be deleted", nil)
+	}
 	if err := s.repo.Delete(ctx, oid, tenantID); err != nil { return utils.Internal("ORDER_DELETE_FAILED", "Unable to delete order", err) }
 	return nil
 }

@@ -6,10 +6,10 @@ import { inventoriesService, type Inventory } from '../../services/inventoriesSe
 import { Button, Input, Modal, ModalBody, ModalContent, ModalHeader, ModalFooter, Select, SelectItem, Dropdown, DropdownTrigger, DropdownMenu, DropdownItem } from '@heroui/react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { storesService } from '../../services/storesService'
-import { EllipsisVerticalIcon, EyeIcon, PencilSquareIcon, TrashIcon } from '@heroicons/react/24/outline'
 import ConfirmModal from '../../components/common/ConfirmModal'
 import { useTranslation } from 'react-i18next'
 import { usePreferences } from '../../store/prefs'
+import { useDateFormatter } from '../../hooks/useDateFormatter'
 
 function CreateInventoryModal({ isOpen, onOpenChange }: { isOpen: boolean; onOpenChange: (v:boolean)=>void }) {
   const { t } = useTranslation()
@@ -22,7 +22,7 @@ function CreateInventoryModal({ isOpen, onOpenChange }: { isOpen: boolean; onOpe
   const create = async () => {
     const created = await inventoriesService.create({ name, shop_id: shopId, type })
     onOpenChange(false)
-    if (created?.id) navigate(`/products/inventory/${created.id}`)
+    if (created?.id) navigate(`/products/inventory/${created.id}?tab=scan&pf=all`)
   }
   return (
     <Modal isOpen={isOpen} onOpenChange={onOpenChange} size="3xl">
@@ -66,6 +66,7 @@ export default function InventoryPage() {
   const [open, setOpen] = useState(false)
   const [confirm, setConfirm] = useState<{ open: boolean; id?: string; name?: string }>({ open: false })
   const { prefs } = usePreferences()
+  const { format } = useDateFormatter()
 
   const { data, isLoading } = useQuery({
     queryKey: ['inventories', page, limit, search, prefs.selectedStoreId||'__ALL__'],
@@ -81,29 +82,29 @@ export default function InventoryPage() {
     total_measurement_value: i.total_measurement_value || 0,
     shortage: i.shortage || 0,
     surplus: i.surplus || 0,
-    postponed: i.postponed || 0,
     difference_sum: i.difference_sum || 0,
     type: i.type,
-    status: i.status_id ? t('inventory.status_completed') : '-',
+    status_id: i.status_id || '',
     created_at: i.created_at,
-    finished_at: i.finished_at || '-',
+    finished_at: i.finished_at || null,
     created_by: i.created_by?.name || '-',
     finished_by: i.finished_by?.name || '-',
   })), [data, t])
 
   const columns: CustomColumn[] = useMemo(()=> ([
-    { uid: 'external_id', name: t('inventory.columns.id') },
-    { uid: 'name', name: t('inventory.columns.name'), className: 'w-[30%] min-w-[280px]' },
-    { uid: 'shop_name', name: t('inventory.columns.store') },
-    { uid: 'total_measurement_value', name: t('inventory.columns.qty') },
-    { uid: 'difference', name: t('inventory.columns.difference') },
-    { uid: 'difference_sum', name: t('inventory.columns.diff_amount') },
-    { uid: 'type', name: t('inventory.columns.type') },
-    { uid: 'status', name: t('inventory.columns.status') },
-    { uid: 'created_at', name: t('inventory.columns.creation') },
-    { uid: 'finished_at', name: t('inventory.columns.completion') },
-    { uid: 'created_by', name: t('inventory.columns.created_by') },
-    { uid: 'finished_by', name: t('inventory.columns.finished_by') },
+    { uid: 'external_id', name: t('inventory.columns.id'), className:'min-w-[100px]' },
+    { uid: 'name', name: t('inventory.columns.name'), className: 'min-w-[320px]' },
+    { uid: 'shop_name', name: t('inventory.columns.store'), className:'min-w-[180px]' },
+    { uid: 'total_measurement_value', name: t('inventory.columns.qty'), className:'min-w-[120px]' },
+    { uid: 'difference', name: t('inventory.columns.difference'), className:'min-w-[180px]' },
+    { uid: 'difference_sum', name: t('inventory.columns.diff_amount'), className:'min-w-[200px]' },
+    { uid: 'type', name: t('inventory.columns.type'), className:'min-w-[100px]' },
+    { uid: 'status', name: t('inventory.columns.status'), className:'min-w-[140px]' },
+    { uid: 'created_at', name: t('inventory.columns.creation'), className:'min-w-[200px]' },
+    { uid: 'finished_at', name: t('inventory.columns.completion'), className:'min-w-[200px]' },
+    { uid: 'created_by', name: t('inventory.columns.created_by'), className:'min-w-[160px]' },
+    { uid: 'finished_by', name: t('inventory.columns.finished_by'), className:'min-w-[160px]' },
+    { uid: 'actions', name: '', className:'min-w-[100px]' },
   ]), [t])
 
   const updateParams = (p: any) => {
@@ -127,14 +128,17 @@ export default function InventoryPage() {
     switch (key) {
       case 'name':
         return <button className="text-primary underline-offset-2 hover:underline" onClick={()=> navigate(`/products/inventory/${row.id}`)}>{row.name}</button>
-      case 'status':
-        return <span className="px-3 py-1 rounded-full bg-success-100 text-success-700 text-xs">{t('inventory.status_completed')}</span>
+      case 'status': {
+        const sid = String(row.status_id||'')
+        if (sid === 'rejected') return <span className="px-3 py-1 rounded-full bg-danger-100 text-danger-700 text-xs">{t('inventory.status.rejected') || 'Rejected'}</span>
+        if (row.finished_at) return <span className="px-3 py-1 rounded-full bg-success-100 text-success-700 text-xs">{t('inventory.status.finished') || 'Finished'}</span>
+        return <span className="px-3 py-1 rounded-full bg-primary-100 text-primary-700 text-xs">{t('inventory.status.in_progress') || 'In Progress'}</span>
+      }
       case 'difference':
         return (
           <div className="flex items-center gap-2">
             <BadgeDot color="success" count={row.surplus} label="+" />
             <BadgeDot color="danger" count={row.shortage} label="-" />
-            <BadgeDot color="primary" count={row.postponed} label="⧖" />
           </div>
         )
       case 'difference_sum': {
@@ -142,7 +146,24 @@ export default function InventoryPage() {
         const cls = val > 0 ? 'text-success-600' : val < 0 ? 'text-danger-600' : 'text-foreground/60'
         return <span className={cls}>{Intl.NumberFormat('ru-RU').format(val)} UZS</span>
       }
-      // no actions column
+      case 'created_at':
+        return <span>{format(row.created_at, { withTime: true })}</span>
+      case 'finished_at':
+        return <span>{row.finished_at ? format(row.finished_at, { withTime: true }) : '-'}</span>
+     case 'actions': {
+       const sid = String(row.status_id||'')
+       if (sid && sid !== 'rejected') return null
+       return (
+         <Dropdown>
+           <DropdownTrigger>
+             <Button variant="light" size="sm">⋯</Button>
+           </DropdownTrigger>
+           <DropdownMenu aria-label="inv-actions">
+             <DropdownItem key="delete" className="text-danger" color="danger" onPress={()=> setConfirm({ open: true, id: row.id, name: row.name })}>{t('common.delete')}</DropdownItem>
+           </DropdownMenu>
+         </Dropdown>
+       )
+     }
       default:
         return row[key]
     }

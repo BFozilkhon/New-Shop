@@ -24,6 +24,12 @@ func (h *TenantHandler) Register(r fiber.Router) {
 	r.Get("/tenants/:id/stats", h.Stats)
 }
 
+// Register tenant-scoped endpoints (require tenant middleware)
+func (h *TenantHandler) RegisterCurrent(r fiber.Router) {
+	r.Get("/tenant/current", h.GetCurrent)
+	r.Patch("/tenant/current", h.UpdateCurrent)
+}
+
 func (h *TenantHandler) List(c *fiber.Ctx) error {
 	page, _ := strconv.ParseInt(c.Query("page", "1"), 10, 64)
 	limit, _ := strconv.ParseInt(c.Query("limit", "10"), 10, 64)
@@ -74,4 +80,24 @@ func (h *TenantHandler) Stats(c *fiber.Ctx) error {
 	stats, err := h.svc.Stats(c.Context(), id)
 	if err != nil { return err }
 	return utils.Success(c, stats)
+}
+
+// Tenant-scoped handlers
+func (h *TenantHandler) GetCurrent(c *fiber.Ctx) error {
+	v := c.Locals("tenant")
+	if v == nil { return utils.BadRequest("TENANT_REQUIRED", "Tenant not resolved", nil) }
+	tenant := v.(*models.Tenant)
+	return utils.Success(c, tenant)
+}
+
+func (h *TenantHandler) UpdateCurrent(c *fiber.Ctx) error {
+	v := c.Locals("tenant")
+	if v == nil { return utils.BadRequest("TENANT_REQUIRED", "Tenant not resolved", nil) }
+	tenant := v.(*models.Tenant)
+	var body struct { Settings models.TenantSettings `json:"settings"` }
+	if err := c.BodyParser(&body); err != nil { return utils.BadRequest("INVALID_BODY", "Invalid request body", err) }
+	payload := models.Tenant{ Settings: body.Settings }
+	item, err := h.svc.Update(c.Context(), tenant.ID.Hex(), payload)
+	if err != nil { return err }
+	return utils.Success(c, item)
 } 

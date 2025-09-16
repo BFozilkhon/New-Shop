@@ -2,9 +2,10 @@ import { useState, useEffect } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { characteristicsService, Characteristic } from '../../../services/characteristicsService'
 import CustomModal from '../../../components/common/CustomModal'
-import { Input, Select, SelectItem, Switch } from '@heroui/react'
+import { Input, Select, SelectItem, Switch, Button } from '@heroui/react'
 import { toast } from 'react-toastify'
 import { useTranslation } from 'react-i18next'
+import { TrashIcon, PlusIcon } from '@heroicons/react/24/outline'
 
 type Props = {
   isOpen: boolean
@@ -24,8 +25,9 @@ const CHARACTERISTIC_TYPES = [
 export default function CharacteristicModal({ isOpen, mode, characteristic, onClose, onSuccess }: Props) {
   const { t } = useTranslation()
   const [name, setName] = useState('')
-  const [type, setType] = useState('text')
+  const [type, setType] = useState('select')
   const [isActive, setIsActive] = useState(true)
+  const [values, setValues] = useState<string[]>([''])
 
   const createMutation = useMutation({
     mutationFn: characteristicsService.create,
@@ -52,8 +54,9 @@ export default function CharacteristicModal({ isOpen, mode, characteristic, onCl
 
   const resetForm = () => {
     setName('')
-    setType('text')
+    setType('select')
     setIsActive(true)
+    setValues([''])
   }
 
   useEffect(() => {
@@ -61,6 +64,7 @@ export default function CharacteristicModal({ isOpen, mode, characteristic, onCl
       setName(characteristic.name)
       setType(characteristic.type)
       setIsActive(characteristic.is_active)
+      setValues(characteristic.values?.length ? characteristic.values : [''])
     } else if (isOpen && mode === 'create') {
       resetForm()
     }
@@ -72,15 +76,24 @@ export default function CharacteristicModal({ isOpen, mode, characteristic, onCl
       return
     }
 
-    const payload = {
+    const payload: any = {
       name: name.trim(),
       type,
-      ...(mode === 'edit' && { is_active: isActive })
+    }
+
+    if (type === 'select') {
+      const cleaned = values.map(v => v.trim()).filter(v => v)
+      if (cleaned.length === 0) {
+        toast.error('At least one option is required')
+        return
+      }
+      payload.values = cleaned
     }
 
     if (mode === 'create') {
       createMutation.mutate(payload)
     } else if (mode === 'edit' && characteristic) {
+      payload.is_active = isActive
       updateMutation.mutate({ id: characteristic.id, data: payload })
     }
   }
@@ -95,6 +108,10 @@ export default function CharacteristicModal({ isOpen, mode, characteristic, onCl
   const isSubmitting = createMutation.isPending || updateMutation.isPending
   const isReadOnly = mode === 'view'
 
+  const setValueAt = (i: number, v: string) => { const next = values.slice(); next[i] = v; setValues(next) }
+  const addRow = () => setValues(v => [...v, ''])
+  const removeRow = (i: number) => { const next = values.slice(); next.splice(i,1); setValues(next.length? next : ['']) }
+
   return (
     <CustomModal
       isOpen={isOpen}
@@ -103,6 +120,7 @@ export default function CharacteristicModal({ isOpen, mode, characteristic, onCl
       onSubmit={isReadOnly ? undefined : handleSubmit}
       submitLabel={mode === 'create' ? t('common.create') : t('common.update')}
       isSubmitting={isSubmitting}
+      size="lg"
     >
       <div className="space-y-4">
         <Input
@@ -112,6 +130,7 @@ export default function CharacteristicModal({ isOpen, mode, characteristic, onCl
           onValueChange={setName}
           isRequired
           isReadOnly={isReadOnly}
+          variant="bordered"
         />
 
         <Select
@@ -120,6 +139,8 @@ export default function CharacteristicModal({ isOpen, mode, characteristic, onCl
           selectedKeys={[type]}
           onSelectionChange={(keys) => setType(Array.from(keys)[0] as string)}
           isDisabled={isReadOnly}
+          variant="bordered"
+          classNames={{ trigger:'h-14' }}
         >
           {CHARACTERISTIC_TYPES.map(option => (
             <SelectItem key={option.key}>
@@ -127,6 +148,27 @@ export default function CharacteristicModal({ isOpen, mode, characteristic, onCl
             </SelectItem>
           ))}
         </Select>
+
+        {type === 'select' && (
+          <div>
+            <div className="text-sm font-medium mb-2">Options</div>
+            <div className="space-y-2">
+              {values.map((v, idx) => (
+                <div key={idx} className="flex gap-2 items-center">
+                  <Input variant="bordered" className="flex-1" placeholder="Enter option" value={v} onValueChange={(val)=> setValueAt(idx, val)} isReadOnly={isReadOnly} classNames={{ inputWrapper:'h-12' }} />
+                  {!isReadOnly && (
+                    <Button isIconOnly variant="flat" color="danger" className="h-12 w-12" onPress={()=> removeRow(idx)} aria-label="delete"><TrashIcon className="w-5 h-5" /></Button>
+                  )}
+                </div>
+              ))}
+              {!isReadOnly && (
+                <div className="pt-2">
+                  <Button startContent={<PlusIcon className="w-4 h-4" />} variant="flat" className="w-full justify-start flex items-center justify-center" onPress={addRow}>Add</Button>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {mode === 'edit' && (
           <Switch
@@ -136,14 +178,6 @@ export default function CharacteristicModal({ isOpen, mode, characteristic, onCl
           >
             {t('catalog.common.active')}
           </Switch>
-        )}
-
-        {mode === 'view' && characteristic && (
-          <div className="space-y-2 text-sm text-default-600">
-            <div>Type: {characteristic.type}</div>
-            <div>Status: {characteristic.is_active ? t('catalog.common.active') : t('catalog.common.inactive')}</div>
-            <div>Created: {new Date(characteristic.created_at).toLocaleDateString()}</div>
-          </div>
         )}
       </div>
     </CustomModal>

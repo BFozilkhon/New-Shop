@@ -19,7 +19,7 @@ export default function LoginPage() {
     try {
       await login(email, password, remember)
       toast.success('Welcome back!')
-      navigate('/dashboard', { replace: true })
+      navigate('/products/catalog', { replace: true })
     } finally {
       setLoading(false)
     }

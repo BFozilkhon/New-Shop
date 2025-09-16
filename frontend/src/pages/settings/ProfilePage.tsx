@@ -10,6 +10,7 @@ import { toast } from 'react-toastify'
 import { PhotoIcon } from '@heroicons/react/24/outline'
 import { usePreferences } from '../../store/prefs'
 import { useTranslation } from 'react-i18next'
+import { tenantsService } from '../../services/tenantsService'
 
 const sections = [
   { key: 'general', labelKey: 'profile.sections.general' },
@@ -40,6 +41,7 @@ export default function ProfilePage() {
   const [notifyEnabled, setNotifyEnabled] = useState<boolean>(() => localStorage.getItem('pref_notify') === '1')
   const [serviceMode, setServiceMode] = useState<boolean>(prefs.serviceMode)
   const [language, setLanguage] = useState<string>(prefs.language || 'EN')
+  const [timezone, setTimezone] = useState<string>(() => localStorage.getItem('pref_timezone') || 'Asia/Tashkent')
 
   // keep track of created object URLs so we can revoke them
   const createdObjectUrlsRef = useRef<string[]>([])
@@ -55,6 +57,8 @@ export default function ProfilePage() {
       const av = (auth.user as any).avatar
       if (av) setAvatar([av])
     }
+    // load current tenant timezone
+    tenantsService.getCurrent().then(t => { if (t?.settings?.timezone) { setTimezone(t.settings.timezone) } }).catch(()=>{})
 
     return () => {
       // revoke created object URLs on unmount
@@ -66,6 +70,7 @@ export default function ProfilePage() {
   useEffect(() => { localStorage.setItem('pref_notify', notifyEnabled ? '1' : '0') }, [notifyEnabled])
   useEffect(() => { localStorage.setItem('pref_service_mode', serviceMode ? '1' : '0'); setSvcModePref(serviceMode) }, [serviceMode])
   useEffect(() => { localStorage.setItem('pref_language', language); setLangPref(language) }, [language])
+  useEffect(() => { if (timezone) localStorage.setItem('pref_timezone', timezone) }, [timezone])
 
   const [isSaving, setIsSaving] = useState(false)
 
@@ -76,10 +81,13 @@ export default function ProfilePage() {
       const payload: any = { name, email, password: password || undefined, phone, pref_service_mode: serviceMode, pref_language: language }
       if (avatar && avatar.length > 0) payload.avatar = avatar[0]
       const updated = await usersService.update(auth.user.id, payload)
+      // save tenant timezone
+      try { await tenantsService.updateCurrent({ settings: { timezone } }) } catch {}
       localStorage.setItem('user', JSON.stringify(updated))
       // sync prefs to localStorage for immediate effect
       localStorage.setItem('pref_service_mode', serviceMode ? '1' : '0')
       localStorage.setItem('pref_language', language)
+      localStorage.setItem('pref_timezone', timezone)
       // apply language immediately
       try { document.documentElement.lang = (language || 'EN').toLowerCase() } catch {}
       toast.success('Profile updated')
@@ -191,6 +199,16 @@ export default function ProfilePage() {
                             <SelectItem key="EN">English</SelectItem>
                             <SelectItem key="UZ">Uzbek</SelectItem>
                             <SelectItem key="RU">Russian</SelectItem>
+                          </Select>
+                        </div>
+                        <div className="col-span-2">
+                          <Select label="Timezone" selectedKeys={[timezone]} onSelectionChange={(keys)=> setTimezone((Array.from(keys)[0] as string)||'Asia/Tashkent')} variant="bordered" classNames={{ trigger: 'h-14' }}>
+                            <SelectItem key="Asia/Tashkent">Uzbekistan (Asia/Tashkent)</SelectItem>
+                            <SelectItem key="America/New_York">USA – Eastern (America/New_York)</SelectItem>
+                            <SelectItem key="America/Chicago">USA – Central (America/Chicago)</SelectItem>
+                            <SelectItem key="America/Denver">USA – Mountain (America/Denver)</SelectItem>
+                            <SelectItem key="America/Los_Angeles">USA – Pacific (America/Los_Angeles)</SelectItem>
+                            <SelectItem key="UTC">UTC</SelectItem>
                           </Select>
                         </div>
                       </div>

@@ -33,13 +33,14 @@ func NewProductService(
 	}
 }
 
-func (s *ProductService) List(ctx context.Context, page, limit int64, search, categoryID, brandID, supplierID, status string, isActive, isBundle *bool, minPrice, maxPrice *float64, tenantID string, storeID string) ([]models.ProductDTO, int64, error) {
+func (s *ProductService) List(ctx context.Context, page, limit int64, search, categoryID string, categoryIDs []string, brandID, supplierID, status string, isActive, isBundle *bool, minPrice, maxPrice *float64, tenantID string, storeID string) ([]models.ProductDTO, int64, error) {
 	items, total, err := s.repo.List(ctx, repositories.ProductListParams{
 		Page:       page,
 		Limit:      limit,
 		Sort:       bson.D{{Key: "created_at", Value: -1}},
 		Search:     search,
 		CategoryID: categoryID,
+		CategoryIDs: categoryIDs,
 		BrandID:    brandID,
 		SupplierID: supplierID,
 		Status:     status,
@@ -69,6 +70,16 @@ func (s *ProductService) List(ctx context.Context, page, limit int64, search, ca
 			if category, err := s.categoryRepo.Get(ctx, product.CategoryID); err == nil {
 				dto.CategoryName = category.Name
 			}
+		}
+
+		// Resolve multiple category names if present
+		if len(product.CategoryIDs) > 0 {
+			names := make([]string, 0, len(product.CategoryIDs))
+			for _, cid := range product.CategoryIDs {
+				if cid == primitive.NilObjectID { continue }
+				if cat, err := s.categoryRepo.Get(ctx, cid); err == nil { names = append(names, cat.Name) }
+			}
+			dto.CategoryNames = names
 		}
 		
 		if product.BrandID != primitive.NilObjectID {
@@ -107,6 +118,15 @@ func (s *ProductService) Get(ctx context.Context, id string, tenantID string) (*
 		if category, err := s.categoryRepo.Get(ctx, m.CategoryID); err == nil {
 			dto.CategoryName = category.Name
 		}
+	}
+
+	if len(m.CategoryIDs) > 0 {
+		names := make([]string, 0, len(m.CategoryIDs))
+		for _, cid := range m.CategoryIDs {
+			if cid == primitive.NilObjectID { continue }
+			if cat, err := s.categoryRepo.Get(ctx, cid); err == nil { names = append(names, cat.Name) }
+		}
+		dto.CategoryNames = names
 	}
 	
 	if m.BrandID != primitive.NilObjectID {
@@ -152,6 +172,17 @@ func (s *ProductService) Create(ctx context.Context, body models.ProductCreate, 
 			}
 		} else {
 			return nil, utils.BadRequest("INVALID_CATEGORY_ID", "Invalid category ID", nil)
+		}
+	}
+	// Validate category_ids if provided
+	var categoryIDs []primitive.ObjectID
+	if len(body.CategoryIDs) > 0 {
+		for _, id := range body.CategoryIDs {
+			if id == "" { continue }
+			oid, err := primitive.ObjectIDFromHex(id)
+			if err != nil { return nil, utils.BadRequest("INVALID_CATEGORY_ID", "Invalid category ID in category_ids", err) }
+			if _, err := s.categoryRepo.Get(ctx, oid); err != nil { return nil, utils.BadRequest("CATEGORY_NOT_FOUND", "Category not found in category_ids", nil) }
+			categoryIDs = append(categoryIDs, oid)
 		}
 	}
 
@@ -219,6 +250,13 @@ func (s *ProductService) Create(ctx context.Context, body models.ProductCreate, 
 	if body.CategoryID != "" {
 		if oid, err := primitive.ObjectIDFromHex(body.CategoryID); err == nil {
 			m.CategoryID = oid
+		}
+	}
+	if len(categoryIDs) > 0 {
+		m.CategoryIDs = categoryIDs
+		// set primary category_id to last provided id if not explicitly set
+		if m.CategoryID == primitive.NilObjectID {
+			m.CategoryID = categoryIDs[len(categoryIDs)-1]
 		}
 	}
 	if body.BrandID != "" {
@@ -328,6 +366,18 @@ func (s *ProductService) Update(ctx context.Context, id string, body models.Prod
 			}
 		}
 	}
+	// category_ids array
+	if body.CategoryIDs != nil {
+		ids := []primitive.ObjectID{}
+		for _, id := range body.CategoryIDs {
+			if id == "" { continue }
+			cid, err := primitive.ObjectIDFromHex(id)
+			if err != nil { return nil, utils.BadRequest("INVALID_CATEGORY_ID", "Invalid category id in category_ids", err) }
+			if _, err := s.categoryRepo.Get(ctx, cid); err != nil { return nil, utils.BadRequest("CATEGORY_NOT_FOUND", "Category not found in category_ids", nil) }
+			ids = append(ids, cid)
+		}
+		update["category_ids"] = ids
+	}
 
 	if body.BrandID != nil {
 		if *body.BrandID == "" {
@@ -343,7 +393,7 @@ func (s *ProductService) Update(ctx context.Context, id string, body models.Prod
 			}
 		}
 	}
-
+	
 	if body.SupplierID != nil {
 		if *body.SupplierID == "" {
 			update["supplier_id"] = primitive.NilObjectID
@@ -436,7 +486,7 @@ func (s *ProductService) Update(ctx context.Context, id string, body models.Prod
 	}
 	if body.Status != nil {
 		if !s.isValidStatus(*body.Status) {
-			return nil, utils.BadRequest("INVALID_STATUS", "Invalid product status. Valid statuses: active, inactive, discontinued", nil)
+			return nil, utils.BadRequest("INVALID_STATUS", "Invalid product status. Valid statuses: active, inactive", nil)
 		}
 		update["status"] = *body.Status
 	}
@@ -577,7 +627,6 @@ func (s *ProductService) isValidStatus(status string) bool {
 	validStatuses := []string{
 		models.ProductStatusActive,
 		models.ProductStatusInactive,
-		models.ProductStatusDiscontinued,
 	}
 
 	for _, validStatus := range validStatuses {

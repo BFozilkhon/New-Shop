@@ -23,6 +23,9 @@ const en = {
     logout: 'Log Out',
     yes: 'Yes',
     no: 'No',
+    accepted: 'Accepted',
+    rejected: 'Rejected',
+    in_progress: 'In progress',
   },
   profile: {
     breadcrumb: 'Home / Settings / Profile',
@@ -387,6 +390,7 @@ const en = {
     delete_confirm_desc: 'Are you sure you want to delete "{{name}}"? This action cannot be undone.',
     form: {
       main: 'Main Information', prices: 'Prices', quantity: 'Product Quantity', characteristics: 'Characteristics',
+      variations: 'Variations',
       product_name: 'Product Name', product_name_ph: 'Enter product name',
       sku: 'SKU', sku_ph: 'Enter product SKU', part_number: 'Part Number', part_number_ph: 'Enter part number',
       barcode: 'Barcode', barcode_ph: 'Enter barcode',
@@ -405,7 +409,7 @@ const en = {
   orders: {
     header: 'Orders',
     tabs: { orders: 'Orders', returns: 'Order returns' },
-    table: { name: 'Name', supplier: 'Supplier', store: 'Store', qty: 'Qty', amount: 'Amount', created: 'Created' },
+    table: { name: 'Name', supplier: 'Supplier', store: 'Store', qty: 'Qty', amount: 'Amount', created: 'Created', payment: 'Payment', status: 'Status', debt: 'Debt', amount_supply: 'Amount at the supply price', amount_retail: 'Amount at the retail price', amount_whole: 'Whole order amount' },
     create: 'New order',
     create_return: 'New order return',
     modal: {
@@ -423,6 +427,7 @@ const en = {
       id: 'ID', name: 'Name', store: 'Store', qty: 'Quantity', difference: 'Difference', diff_amount: 'Amount of the difference', type: 'Type', status: 'Status', creation: 'Creation', completion: 'Completion', created_by: 'Created by', finished_by: 'Finished by', actions: 'Actions'
     },
     status_completed: 'Completed',
+    status: { in_progress: 'In progress', finished: 'Finished', rejected: 'Rejected' },
     actions: { view: 'View', edit: 'Edit', delete: 'Delete' },
     confirm_delete_title: 'Delete Inventory?',
     confirm_delete_desc: 'Are you sure you want to delete "{{name}}"? This action cannot be undone.',
@@ -431,18 +436,22 @@ const en = {
       report: 'Report', back: 'Back', finish: 'Finish Inventory', tabs: { results: 'Results', scan: 'Scanning' },
       cards: {
         total_checked: 'Total products checked', shortages_n: 'Number of shortages', surpluses_n: 'Number of surpluses',
-        shortages_cost: 'Shortages in the delivery price', shortages_sale: 'Shortages in the sale price', surplus_cost: 'Surplus on the delivery price', surplus_sale: 'Surplus at the sale price', postponed: 'Postponed', units: 'units'
+        shortages_cost: 'Shortages at the supply price', shortages_sale: 'Shortages at the retail price', surplus_cost: 'Surplus at the supply price', surplus_sale: 'Surplus at the retail price', postponed: 'Postponed', units: 'units'
       },
       scan: { placeholder: 'Scan barcode, search by name/SKU/part number...', add: 'Add', save: 'Save', found: 'Found' },
-      table_scan: { name:'Name', sku:'SKU', barcode:'Barcode', declared:'Declared', scanned:'Scanned', diff:'Difference', diff_amount:'Amount of Difference', activity:'Product activity' },
+      table_scan: { name:'Name', sku:'SKU', barcode:'Barcode', supply_price:'Supply price', retail_price:'Retail price', declared:'Declared', scanned:'Scanned', diff:'Difference', diff_amount:'Amount of Difference', activity:'Product activity' },
       table_results: { name:'Name', sku:'SKU', barcode:'Barcode', declared:'Declared', scanned:'Scanned', diff:'Difference' },
-      confirm_finish_title: 'Finish Inventory?', confirm_finish_desc: 'After finishing, the inventory becomes read-only. Proceed?', confirm_finish_btn: 'Finish'
+      confirm_finish_title: 'Finish Inventory?', confirm_finish_desc: 'After finishing, the inventory becomes read-only. Proceed?', confirm_finish_btn: 'Finish',
+      reject: 'Reject',
+      confirm_reject_title: 'Reject inventory?',
+      confirm_reject_desc: 'This will mark the inventory as rejected. You will not be able to edit it.',
+      confirm_reject_btn: 'Reject'
     },
     report: {
       title: 'Inventory Report №{{id}}', store: 'Store', scanned_products: 'Scanned products', started: 'Started', finished: 'Finished',
       shortages: 'Shortages', surpluses: 'Surpluses', name: 'Name', sku: 'SKU', barcode: 'Barcode', qty: 'Qty', amount_cost: 'Amount by cost', amount_sale: 'Amount by sale', sum_shortages: 'Sum of shortages', sum_surpluses: 'Sum of surpluses', totals: 'Inventory totals', by_cost: 'By cost price', by_sale: 'By sale price'
     },
-    toasts: { saved: 'Inventory saved', save_failed: 'Save failed', finished: 'Inventory finished', finish_failed: 'Finish failed' }
+    toasts: { saved: 'Inventory saved', save_failed: 'Save failed', finished: 'Inventory finished', finish_failed: 'Finish failed', rejected: 'Inventory rejected', reject_failed: 'Reject failed' }
   },
   customers: {
     header: 'Customers',
@@ -521,7 +530,9 @@ const en = {
       confirm_reject_title: 'Reject repricing?',
       confirm_reject_desc: 'This will mark the repricing as rejected.',
       table: { name: 'Name', sku: 'SKU', barcode: 'Barcode', currency: 'Currency', supply: 'Supplier price', retail: 'Retail price', qty: 'Quantity' }
-    }
+    },
+    status: { new: 'New', completed: 'Finished', rejected: 'Rejected' },
+    detail_texts: { type: 'Repricing type', type_price: 'Change the retail price', type_delivery: 'Change the supply price', type_currency: 'Change currency' }
   },
   transfer: {
     header: 'Transfer',

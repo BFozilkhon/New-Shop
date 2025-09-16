@@ -8,7 +8,7 @@ import (
 type Attribute struct {
 	ID        primitive.ObjectID `bson:"_id,omitempty"`
 	Name      string             `bson:"name"`
-	Value     string             `bson:"value"`
+	Values    []string           `bson:"values"`
 	IsActive  bool               `bson:"is_active"`
 	IsDeleted bool               `bson:"is_deleted"`
 	CreatedAt time.Time          `bson:"created_at"`
@@ -18,7 +18,7 @@ type Attribute struct {
 type AttributeDTO struct {
 	ID        string    `json:"id"`
 	Name      string    `json:"name"`
-	Value     string    `json:"value"`
+	Values    []string  `json:"values"`
 	IsActive  bool      `json:"is_active"`
 	IsDeleted bool      `json:"is_deleted"`
 	CreatedAt time.Time `json:"created_at"`
@@ -26,21 +26,21 @@ type AttributeDTO struct {
 }
 
 type AttributeCreate struct {
-	Name  string `json:"name"`
-	Value string `json:"value"`
+	Name   string   `json:"name"`
+	Values []string `json:"values"`
 }
 
 type AttributeUpdate struct {
-	Name     *string `json:"name"`
-	Value    *string `json:"value"`
-	IsActive *bool   `json:"is_active"`
+	Name     *string  `json:"name"`
+	Values   []string `json:"values"`
+	IsActive *bool    `json:"is_active"`
 }
 
 func ToAttributeDTO(m Attribute) AttributeDTO {
 	return AttributeDTO{
 		ID:        m.ID.Hex(),
 		Name:      m.Name,
-		Value:     m.Value,
+		Values:    m.Values,
 		IsActive:  m.IsActive,
 		IsDeleted: m.IsDeleted,
 		CreatedAt: m.CreatedAt,

@@ -1,22 +1,26 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { Tabs, Tab, Input, Button, Dropdown, DropdownMenu, DropdownItem, DropdownTrigger, Pagination, Select, SelectItem, Textarea, ButtonGroup } from '@heroui/react'
+import { Tabs, Tab, Input, Button, Select, SelectItem, Textarea, ButtonGroup, Chip } from '@heroui/react'
 import CustomMainBody from '../../components/common/CustomMainBody'
+import CustomTable, { type CustomColumn } from '../../components/common/CustomTable'
 import { ordersService } from '../../services/ordersService'
 import { productsService } from '../../services/productsService'
-import { BanknotesIcon, ArrowPathIcon, ArrowTrendingUpIcon, ShoppingBagIcon, CubeIcon, ChevronDownIcon, MagnifyingGlassIcon } from '@heroicons/react/24/outline'
+import { BanknotesIcon, ArrowPathIcon, ArrowTrendingUpIcon, ShoppingBagIcon, CubeIcon, ArrowLeftIcon } from '@heroicons/react/24/outline'
 import CustomModal from '../../components/common/CustomModal'
 import { useTranslation } from 'react-i18next'
+import { toast } from 'react-toastify'
+import { useQuery } from '@tanstack/react-query'
+import ConfirmModal from '../../components/common/ConfirmModal'
 
 export default function OrderDetailPage() {
   const { t } = useTranslation()
   const { id } = useParams()
   const navigate = useNavigate()
   const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
   const [order, setOrder] = useState<any>(null)
   const [items, setItems] = useState<any[]>([])
   const [activeTab, setActiveTab] = useState<'products'|'details'|'payments'>('products')
+  const [productFilter, setProductFilter] = useState<'ordered'|'all'|'low'|'zero'>('all')
 
   // payments
   const [payments, setPayments] = useState<any[]>([])
@@ -24,23 +28,70 @@ export default function OrderDetailPage() {
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false)
   const [paymentForm, setPaymentForm] = useState<any>({ account_id: '', amount: '', payment_method: 'cash', description: '' })
   const [accounts, setAccounts] = useState<any[]>([])
+  const fetchPayments = async () => {
+    try {
+      setPaymentsLoading(true)
+      const data: any = await ordersService.get(String(id))
+      setPayments(Array.isArray(data?.payments) ? data.payments : [])
+      setOrder(data)
+    } finally {
+      setPaymentsLoading(false)
+    }
+  }
+  useEffect(()=>{ if (activeTab === 'payments') fetchPayments() }, [activeTab, id])
 
   // product search + columns like CustomTable
-  const [productQuery, setProductQuery] = useState('')
-  const [productResults, setProductResults] = useState<any[]>([])
-  const [productSearchLoading, setProductSearchLoading] = useState(false)
-  const allColumnKeys = ['name','sku','qty','unit_price','total']
-  const [visibleCols, setVisibleCols] = useState<Set<string>>(new Set(allColumnKeys))
+  const [term, setTerm] = useState('')
+  const [page, setPage] = useState(1)
+  const [limit, setLimit] = useState(10)
+  const [lastScan, setLastScan] = useState('')
 
-  // pagination for items table
-  const [currentPage, setCurrentPage] = useState(1)
-  const [itemsPerPage, setItemsPerPage] = useState(10)
-  const paginatedItems = useMemo(()=>{ const start=(currentPage-1)*itemsPerPage; return items.slice(start, start+itemsPerPage) },[items,currentPage,itemsPerPage])
-  const totalPages = Math.max(1, Math.ceil(items.length / Math.max(1, itemsPerPage)))
+  // confirm modal
+  const [confirm, setConfirm] = useState<{ open: boolean; action?: 'approve'|'reject' }>({ open: false })
 
-  useEffect(()=>{ (async()=>{ try{ setLoading(true); const data = await ordersService.get(String(id)); setOrder(data); setItems(Array.isArray(data?.items)? data.items:[]) } finally{ setLoading(false) } })() },[id])
+  // debounce autosave
+  const [initialized, setInitialized] = useState(false)
 
-  useEffect(()=>{ if (!productQuery || activeTab!=='products') { setProductResults([]); return } const tmr = setTimeout(async ()=>{ try{ setProductSearchLoading(true); const res:any = await (productsService as any).list({ page:1, limit:10, search: productQuery }); setProductResults(res?.items||[]) } finally { setProductSearchLoading(false) } }, 350); return ()=>clearTimeout(tmr) },[productQuery, activeTab])
+  // cache product info for ordered rows (barcode, current stock)
+  const [prodCache, setProdCache] = useState<Record<string, any>>({})
+  useEffect(()=>{
+    const ids = (items||[]).map((it:any)=> it.product_id).filter(Boolean)
+    const missing = ids.filter((pid)=> !prodCache[pid])
+    if (!missing.length) return
+    let cancelled = false
+    ;(async()=>{
+      try {
+        const fetched = await Promise.all(missing.map((pid)=> productsService.get(String(pid)).catch(()=>null)))
+        if (cancelled) return
+        const map: Record<string, any> = {}
+        fetched.forEach((p)=> { if (p && p.id) map[p.id] = p })
+        if (Object.keys(map).length) setProdCache(prev=> ({ ...prev, ...map }))
+      } catch {}
+    })()
+    return ()=> { cancelled = true }
+  }, [items])
+
+  useEffect(()=>{ (async()=>{ try{ setLoading(true); const data = await ordersService.get(String(id)); setOrder(data); setItems(Array.isArray(data?.items)? data.items:[]); setProductFilter(data?.is_finished ? 'ordered' : 'all') } finally{ setLoading(false); setInitialized(true) } })() },[id])
+
+  // autosave order items when changed
+  useEffect(()=>{
+    if (!initialized || order?.is_finished) return
+    const t = setTimeout(async ()=> {
+      try {
+        await ordersService.update(String(id), { items: (items||[]).map((it:any)=> ({
+          product_id: it.product_id,
+          product_name: it.product_name,
+          product_sku: it.product_sku,
+          quantity: Number(it.quantity || it.qty || 0),
+          unit_price: Number(it.unit_price || it.retail_price || 0),
+          supply_price: Number(it.supply_price ?? 0),
+          retail_price: Number(it.retail_price ?? it.unit_price ?? 0),
+          unit: it.unit || 'pcs',
+        })) } as any)
+      } catch {}
+    }, 350)
+    return ()=> clearTimeout(t)
+  }, [items, initialized, id, order?.is_finished])
 
   const stats = useMemo(()=>{
     const orderType = String(order?.type || 'supplier_order')
@@ -102,41 +153,228 @@ export default function OrderDetailPage() {
         return next
       }
       const unit = Number(p?.price || 0)
-      return [...prev, { product_id: pid, product_name: p.name, product_sku: psku, quantity: 1, unit_price: unit, total_price: unit }]
+      return [...prev, { product_id: pid, product_name: p.name, product_sku: psku, quantity: 1, unit_price: unit, total_price: unit, supply_price: Number(p?.cost_price||0), retail_price: Number(p?.price||0) }]
     })
   }
 
-  const updateItem = (idx:number, field:string, value:any) => { const next=[...items]; next[idx] = { ...next[idx], [field]: ['quantity','unit_price'].includes(field) ? Number(value)||0 : value }; if(['quantity','unit_price'].includes(field)){ const q=Number(next[idx].quantity)||0, up=Number(next[idx].unit_price)||0; next[idx].total_price=+(q*up).toFixed(2) } setItems(next) }
+  const addOrIncrementProduct = (p:any, qty:number=1) => {
+    const pid = p?.id || p?._id || p?.ID
+    const psku = p?.sku
+    setItems(prev => {
+      const next = [...prev]
+      const index = next.findIndex(it => (it.product_id && pid && it.product_id === pid) || (psku && it.product_sku === psku))
+      if (index >= 0) {
+        const current = next[index]
+        const unit = Number(current.unit_price || current.retail_price || p?.price || 0)
+        const newQty = Number(current.quantity || 0) + qty
+        next[index] = { ...current, quantity: newQty, total_price: +(newQty * unit).toFixed(2) }
+      } else {
+        const unit = Number(p?.price || 0)
+        next.push({ product_id: pid, product_name: p.name, product_sku: psku, quantity: qty, unit_price: unit, supply_price: Number(p?.cost_price||0), retail_price: Number(p?.price||0), total_price: +(qty*unit).toFixed(2) })
+      }
+      // Persist immediately and toast success
+      ordersService.update(String(id), { items: next.map((it:any)=> ({
+        product_id: it.product_id,
+        product_name: it.product_name,
+        product_sku: it.product_sku,
+        quantity: Number(it.quantity||0),
+        unit_price: Number(it.unit_price || it.retail_price || 0),
+        supply_price: Number(it.supply_price ?? 0),
+        retail_price: Number(it.retail_price ?? it.unit_price ?? 0),
+        unit: it.unit || 'pcs',
+      })) } as any).then(()=> {
+        toast.success('Your order has been saved successfully.')
+      }).catch(()=>{})
+      return next
+    })
+  }
 
-  const save = async () => { try{ setSaving(true); await ordersService.update(String(id), { items }); const fresh = await ordersService.get(String(id)); setOrder(fresh) } finally{ setSaving(false) } }
+  const updateItem = (idx:number, field:string, value:any) => { const next=[...items]; next[idx] = { ...next[idx], [field]: ['quantity','unit_price','supply_price','retail_price'].includes(field) ? Number(value)||0 : value }; if(['quantity','unit_price','retail_price'].includes(field)){ const q=Number(next[idx].quantity)||0, up=Number(next[idx].retail_price ?? next[idx].unit_price)||0; next[idx].total_price=+(q*up).toFixed(2) } setItems(next) }
 
   const formatCurrency = (v:number) => new Intl.NumberFormat('ru-RU').format(Number(v||0))
   const safeDate = (d?:string) => { if(!d) return '—'; try{ return new Date(d).toLocaleString('ru-RU') } catch { return '—' } }
 
-  const fetchPayments = async () => {
-    try { setPaymentsLoading(true); const data: any = await ordersService.get(String(id)); setPayments(Array.isArray(data?.payments) ? data.payments : []) } finally { setPaymentsLoading(false) }
-  }
-  const openPaymentModal = async () => { setIsPaymentModalOpen(true) }
-  const submitPayment = async () => {
-    if (!paymentForm.amount || Number(paymentForm.amount) <= 0) return
-    try { setSaving(true); await ordersService.addPayment(String(id), { amount: Number(paymentForm.amount), payment_method: paymentForm.payment_method, description: paymentForm.description }); await fetchPayments(); const fresh = await ordersService.get(String(id)); setOrder(fresh); setIsPaymentModalOpen(false); setPaymentForm({ account_id: '', amount: '', payment_method: 'cash', description: '' }) } finally { setSaving(false) }
-  }
-  useEffect(()=>{ if(activeTab==='payments') fetchPayments() }, [activeTab])
+  // products for table
+  const { data: productPage, isLoading: listLoading } = useQuery({
+    queryKey: ['products-list', term, page, limit, productFilter],
+    queryFn: async ()=> {
+      const params: any = { page, limit, search: term }
+      if (productFilter === 'low') params.low_stock = true
+      if (productFilter === 'zero') params.zero_stock = true
+      return productsService.list(params)
+    },
+    enabled: productFilter !== 'ordered'
+  })
 
-  const columnsDropdown = (
-    <Dropdown>
-      <DropdownTrigger className="hidden sm:flex">
-        <Button endContent={<ChevronDownIcon className="h-4 w-4" />} variant="bordered" size="md">{t('common.columns')}</Button>
-      </DropdownTrigger>
-      <DropdownMenu aria-label="Table Columns" disallowEmptySelection closeOnSelect={false} selectionMode="multiple" selectedKeys={visibleCols} onSelectionChange={(keys)=> setVisibleCols(keys as Set<string>)} itemClasses={{ base: 'data-[hover=true]:bg-background/40' }}>
-        <DropdownItem key="name">{t('products.columns.name')}</DropdownItem>
-        <DropdownItem key="sku">SKU</DropdownItem>
-        <DropdownItem key="qty">{t('orders.table.qty')}</DropdownItem>
-        <DropdownItem key="unit_price">{t('products.columns.price')}</DropdownItem>
-        <DropdownItem key="total">{t('orders.table.amount')}</DropdownItem>
-      </DropdownMenu>
-    </Dropdown>
-  )
+  // Auto-order by full barcode scan
+  useEffect(()=>{
+    const code = (term||'').trim()
+    if (activeTab !== 'products') return
+    if (!code || !/^\d{8,14}$/.test(code)) return
+    const t = setTimeout(async ()=>{
+      if (code === lastScan) return
+      try {
+        const res:any = await productsService.list({ page:1, limit:10, search: code })
+        const found = (res?.items||[]).find((p:any)=> String(p?.barcode||'') === code)
+        if (found) {
+          addOrIncrementProduct(found, 1)
+          setTerm('')
+          setLastScan(code)
+        }
+      } catch {}
+    }, 200)
+    return ()=> clearTimeout(t)
+  }, [term, activeTab, lastScan])
+
+  const tableRows = useMemo(()=>{
+    if (productFilter === 'ordered') {
+      const src = (items || []).filter((it:any)=> {
+        if (!term) return true
+        const v = (String(it.product_name||'') + ' ' + String(it.product_sku||'')).toLowerCase()
+        return v.includes(term.toLowerCase())
+      })
+      return src.map((it:any, idx:number)=> ({
+        id: it.product_id || idx,
+        product_id: it.product_id,
+        product_name: it.product_name,
+        product_sku: it.product_sku,
+        barcode: (it.barcode || (it.product_id && prodCache[it.product_id]?.barcode) || '-') as any,
+        declared: it.declared || 0,
+        // current stock from cache when available
+        ...(it.product_id && prodCache[it.product_id] ? { declared: prodCache[it.product_id].stock || 0 } : {}),
+        supply_price: Number(it.supply_price ?? it.unit_price ?? 0),
+        retail_price: Number(it.retail_price ?? it.unit_price ?? 0),
+        qty: Number(it.quantity || it.qty || 0),
+      }))
+    }
+    const list = (productPage?.items || []) as any[]
+    return list.map((p:any)=> {
+      const inDoc = (items||[]).find((x:any)=> x.product_id === p.id)
+      return {
+        id: p.id,
+        product_id: p.id,
+        product_name: p.name,
+        product_sku: p.sku,
+        barcode: p.barcode,
+        declared: p.stock || 0,
+        supply_price: p.cost_price || 0,
+        retail_price: p.price || 0,
+        qty: inDoc ? (inDoc.quantity || inDoc.qty || 0) : 0,
+      }
+    })
+  }, [productFilter, productPage, items, term, prodCache])
+
+  const totalCount = productFilter === 'ordered' ? (tableRows?.length || 0) : (productPage?.total || 0)
+
+  const columns: CustomColumn[] = useMemo(()=> {
+    const base: CustomColumn[] = [
+      { uid: 'product_name', name: t('writeoff.detail.table.name'), className: 'min-w-[260px]' },
+      { uid: 'product_sku', name: 'SKU' },
+      { uid: 'barcode', name: t('writeoff.detail.table.barcode') },
+      { uid: 'declared', name: t('writeoff.detail.table.current') },
+      { uid: 'supply_price', name: t('writeoff.detail.table.supply') },
+      { uid: 'markup', name: 'Mark Up (%)' },
+      { uid: 'retail_price', name: t('writeoff.detail.table.retail') },
+      { uid: 'qty', name: t('orders.table.qty') },
+    ]
+    const canAdd = !order?.is_finished && productFilter !== 'ordered'
+    return canAdd ? [...base, { uid: 'actions', name: t('common.actions') }] : base
+  }, [t, order?.is_finished, productFilter])
+
+  const renderCell = (row: any, key: string) => {
+    switch (key) {
+      case 'product_name':
+        return <button className="text-primary underline-offset-2 hover:underline" onClick={()=> navigate(`/products/catalog/${row.product_id}/edit`)}>{row.product_name}</button>
+      case 'declared':
+        return Number(row.declared||0)
+      case 'supply_price': {
+        if (order?.is_finished) return `${Intl.NumberFormat('ru-RU').format(row.supply_price||0)} UZS`
+        const idx = items.findIndex((x:any)=> x.product_id === row.product_id)
+        const onChange = (v: string) => {
+          if (idx >= 0) {
+            const next = [...items]
+            const val = Number(v||0)
+            next[idx].supply_price = val
+            // if markup present, recalc retail
+            const mu = Number(next[idx].markup || 0)
+            if (!isNaN(mu) && isFinite(mu)) {
+              next[idx].retail_price = Math.round(val * (1 + mu/100))
+            }
+            const q = Number(next[idx].quantity||next[idx].qty||0)
+            const rp = Number(next[idx].retail_price||next[idx].unit_price||0)
+            next[idx].total_price = +(q*rp).toFixed(2)
+            setItems(next)
+          }
+        }
+        if (idx < 0) return `${Intl.NumberFormat('ru-RU').format(row.supply_price||0)} UZS`
+        return <Input type="number" value={String(items[idx]?.supply_price ?? row.supply_price ?? 0)} onValueChange={onChange} className="w-48" classNames={{ inputWrapper:'h-10' }} />
+      }
+      case 'markup': {
+        if (order?.is_finished) return `${Number(row.markup ?? (((Number(row.retail_price||0) - Number(row.supply_price||0)) / Math.max(1, Number(row.supply_price||0))) * 100))}%`
+        const idx = items.findIndex((x:any)=> x.product_id === row.product_id)
+        const currentMu = idx >= 0 ? (items[idx]?.markup ?? ((Number(items[idx]?.supply_price||0)>0) ? (((Number(items[idx]?.retail_price||0) - Number(items[idx]?.supply_price||0)) / Number(items[idx]?.supply_price||0)) * 100) : 0)) : ((Number(row.supply_price||0)>0) ? (((Number(row.retail_price||0) - Number(row.supply_price||0)) / Number(row.supply_price||0)) * 100) : 0)
+        const onChange = (v: string) => {
+          if (idx >= 0) {
+            const next = [...items]
+            const mu = Number(v||0)
+            next[idx].markup = mu
+            const supply = Number(next[idx].supply_price||0)
+            next[idx].retail_price = Math.round(supply * (1 + (isNaN(mu)?0:mu)/100))
+            const q = Number(next[idx].quantity||next[idx].qty||0)
+            const rp = Number(next[idx].retail_price||next[idx].unit_price||0)
+            next[idx].total_price = +(q*rp).toFixed(2)
+            setItems(next)
+          }
+        }
+        if (idx < 0) return <span>{String(Math.round((currentMu + Number.EPSILON)*100)/100)}%</span>
+        return <Input type="number" value={String(Math.round((currentMu + Number.EPSILON)*100)/100)} onValueChange={onChange} className="w-32" classNames={{ inputWrapper:'h-10' }} endContent={<span className="text-foreground/60 text-xs">%</span>} />
+      }
+      case 'retail_price': {
+        if (order?.is_finished) return `${Intl.NumberFormat('ru-RU').format(row.retail_price||0)} UZS`
+        const idx = items.findIndex((x:any)=> x.product_id === row.product_id)
+        const onChange = (v: string) => {
+          if (idx >= 0) {
+            const next = [...items]
+            const val = Number(v||0)
+            next[idx].retail_price = val
+            // update markup accordingly if supply > 0
+            const supply = Number(next[idx].supply_price||0)
+            if (supply > 0) {
+              next[idx].markup = Math.round(((val/supply - 1) * 100) * 100) / 100
+            }
+            const q = Number(next[idx].quantity||next[idx].qty||0)
+            next[idx].total_price = +(q*val).toFixed(2)
+            setItems(next)
+          }
+        }
+        if (idx < 0) return `${Intl.NumberFormat('ru-RU').format(row.retail_price||0)} UZS`
+        return <Input type="number" value={String(items[idx]?.retail_price ?? row.retail_price ?? 0)} onValueChange={onChange} className="w-48" classNames={{ inputWrapper:'h-10' }} />
+      }
+      case 'qty': {
+        const idx = items.findIndex((x:any)=> x.product_id === row.product_id)
+        const onChange = (v: string) => {
+          const val = Math.max(0, Number(v||0))
+          if (idx >= 0) { updateItem(idx, 'quantity', val) }
+        }
+        return !order?.is_finished ? (
+          idx >= 0 ? <Input type="number" value={String(items[idx]?.quantity ?? items[idx]?.qty ?? 0)} onValueChange={onChange} className="w-32" classNames={{ inputWrapper:'h-10' }} /> : <span>0</span>
+        ) : <span>{idx >= 0 ? (items[idx]?.quantity ?? items[idx]?.qty ?? 0) : 0}</span>
+      }
+      case 'actions': {
+        if (order?.is_finished || productFilter === 'ordered') return null
+        const inDoc = (items||[]).find((x:any)=> x.product_id === row.product_id)
+        return (
+          <div className="flex justify-end">
+            {!inDoc ? (
+              <Button size="sm" color="primary" onPress={()=> attachProduct({ id: row.product_id, name: row.product_name, sku: row.product_sku, price: row.retail_price, cost_price: row.supply_price })}>Order</Button>
+            ) : null}
+          </div>
+        )
+      }
+      default:
+        return row[key]
+    }
+  }
 
   if (loading) return <CustomMainBody><div className="p-6">Loading...</div></CustomMainBody>
   if (!order) return <CustomMainBody><div className="p-6">Not found</div></CustomMainBody>
@@ -148,101 +386,48 @@ export default function OrderDetailPage() {
           <h1 className="text-xl font-semibold">{order.name}</h1>
           <div className="text-foreground/60 text-sm">{order?.supplier?.name} • {order?.shop?.name}</div>
         </div>
-        <div className="flex gap-2">
-          <Button variant="bordered" onPress={()=>navigate(-1)}>{t('common.back')}</Button>
-          <Button color="primary" onPress={openPaymentModal}>Add payment</Button>
+        <div className="flex gap-2 items-center">
+          <Button variant="flat" color="primary" onPress={()=> setIsPaymentModalOpen(true)}>Add payment</Button>
+          {String(order?.status_id).toLowerCase() === 'rejected' ? (
+            <Chip color="danger" variant="flat">Rejected</Chip>
+          ) : order?.is_finished ? (
+            <Chip color="success" variant="flat">Accepted</Chip>
+          ) : (
+            <>
+              <Button color="danger" variant="flat" onPress={()=> setConfirm({ open:true, action:'reject' })}>Reject</Button>
+              <Button color="success" onPress={()=> setConfirm({ open:true, action:'approve' })}>Accept</Button>
+            </>
+          )}
+          <Button color="primary" variant="bordered" onPress={()=>navigate(-1)} startContent={<ArrowLeftIcon className="h-4 w-4" />}>Back</Button>
         </div>
       </div>
 
       <Tabs aria-label="Order tabs" color="primary" variant="bordered" selectedKey={activeTab} onSelectionChange={(k)=>setActiveTab(k as any)} className="w-full" classNames={{ tabList: 'w-full h-14', tab: 'h-12' }}>
         <Tab key="products" title={<div className="flex items-center space-x-2"><span>{t('products.header')}</span></div>}>
-          <div className="mt-4 space-y-4">
-            <div className="flex justify-between gap-3 items-end">
-              <Input isClearable value={productQuery} onValueChange={setProductQuery} onClear={()=>setProductQuery('')} className="w-full sm:max-w-[44%]" classNames={{ inputWrapper: 'h-11 bg-background ring-1 ring-foreground/40 focus-within:ring-foreground/50 rounded-lg', input: 'text-foreground' }} placeholder={t('importPage.scan') || 'SKU, barcode, title'} startContent={<MagnifyingGlassIcon className="h-5 w-5 text-foreground/60" />} size="md"/>
-              <div className="flex gap-3 items-center">{columnsDropdown}</div>
-            </div>
-
-            {productQuery && (
-              <div className="border rounded-md overflow-hidden">
-                <div className="px-3 py-2 text-sm bg-content2 border-b">{t('inventory.detail.scan.found')}: {productResults.length}{productSearchLoading? ' (searching...)':''}</div>
-                <div className="max-h-72 overflow-auto divide-y">
-                  {productResults.length > 0 ? (
-                    productResults.map((p)=> (
-                      <div key={p.id} className="flex items-center justify-between px-3 py-2 hover:bg-content2/50">
-                        <div className="min-w-0"><div className="text-sm font-medium truncate">{p.name}</div><div className="text-xs text-foreground/60">SKU: {p.sku || '-'} • Barcode: {p.barcode || '-'}</div></div>
-                        <Button color="primary" size="sm" onPress={()=>attachProduct(p)}>{t('inventory.detail.scan.add')}</Button>
-                      </div>
-                    ))
-                  ) : (
-                    <div className="px-3 py-6 text-sm flex items-center justify-between">
-                      <div className="text-default-500">{t('common.no_results')}</div>
-                      <Button size="sm" color="primary" onPress={()=> navigate('/products/catalog/create')}>{t('products.create')}</Button>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-
-            <div className="overflow-auto border rounded-md">
-              <table className="min-w-full divide-y divide-foreground/10">
-                <thead className="bg-background">
-                  <tr>
-                    {visibleCols.has('name') && <th className="px-4 py-2 text-left text-xs">{t('products.columns.name')}</th>}
-                    {visibleCols.has('sku') && <th className="px-4 py-2 text-left text-xs">SKU</th>}
-                    {visibleCols.has('qty') && <th className="px-4 py-2 text-left text-xs">{t('orders.table.qty')}</th>}
-                    {visibleCols.has('unit_price') && <th className="px-4 py-2 text-left text-xs">{t('products.columns.price')}</th>}
-                    {visibleCols.has('total') && <th className="px-4 py-2 text-left text-xs">{t('orders.table.amount')}</th>}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-foreground/10">
-                  {paginatedItems.map((it,idx)=> (
-                    <tr key={idx}>
-                      {visibleCols.has('name') && <td className="px-4 py-2 text-sm">{it.product_name}</td>}
-                      {visibleCols.has('sku') && <td className="px-4 py-2 text-sm">{it.product_sku}</td>}
-                      {visibleCols.has('qty') && (
-                        <td className="px-4 py-2 text-sm">
-                          <Input
-                            type="number"
-                            value={String(it.quantity ?? 0)}
-                            onValueChange={(v)=>updateItem((currentPage-1)*itemsPerPage+idx,'quantity',v)}
-                            size="sm"
-                            variant="bordered"
-                            className="w-24"
-                            classNames={{ inputWrapper: 'h-9 bg-background ring-1 ring-foreground/40 focus-within:ring-foreground/50 rounded-md', input: 'text-foreground text-sm' }}
-                          />
-                        </td>
-                      )}
-                      {visibleCols.has('unit_price') && (
-                        <td className="px-4 py-2 text-sm">
-                          <Input
-                            type="number"
-                            value={String(it.unit_price ?? 0)}
-                            onValueChange={(v)=>updateItem((currentPage-1)*itemsPerPage+idx,'unit_price',v)}
-                            size="sm"
-                            variant="bordered"
-                            className="w-36"
-                            classNames={{ inputWrapper: 'h-9 bg-background ring-1 ring-foreground/40 focus-within:ring-foreground/50 rounded-md', input: 'text-foreground text-sm' }}
-                          />
-                        </td>
-                      )}
-                      {visibleCols.has('total') && <td className="px-4 py-2 text-sm">{it.total_price||0}</td>}
-                    </tr>
-                  ))}
-                  {!items.length && (<tr><td className="px-4 py-6 text-sm text-foreground/60" colSpan={5}>{t('common.no_results')}</td></tr>)}
-                </tbody>
-              </table>
-            </div>
-
-            <div className="py-3 px-2 flex justify-between items-center">
-              <span className="w-[30%] text-sm text-foreground/60">{t('common.page_of', { page: currentPage, pages: totalPages })}</span>
-              <Pagination showControls color="primary" showShadow page={currentPage} total={totalPages} onChange={setCurrentPage} />
-              <div className="hidden sm:flex w-[30%] justify-end gap-2">
-                <Button isDisabled={totalPages === 1 || currentPage <= 1} size="md" variant="flat" onPress={()=>setCurrentPage(p=>Math.max(1,p-1))}>{t('common.previous')}</Button>
-                <Button isDisabled={totalPages === 1 || currentPage >= totalPages} size="md" variant="flat" onPress={()=>setCurrentPage(p=>Math.min(totalPages,p+1))}>{t('common.next')}</Button>
-              </div>
-            </div>
-
-            <div className="flex justify-end"><Button color="primary" onPress={save} isDisabled={saving}>{saving? t('common.save')+'...' : t('common.save')}</Button></div>
+          <div className="mt-4">
+            <CustomTable
+              key={`${productFilter}-${order?.is_finished ? 'locked' : 'open'}`}
+              columns={columns}
+              items={tableRows as any}
+              total={totalCount}
+              page={productFilter==='ordered' ? 1 : page}
+              limit={productFilter==='ordered' ? (tableRows.length || 10) : limit}
+              onPageChange={setPage}
+              onLimitChange={setLimit}
+              renderCell={renderCell}
+              searchValue={term}
+              onSearchChange={setTerm}
+              onSearchClear={()=> setTerm('')}
+              isLoading={!order?.is_finished && productFilter!=='ordered' && listLoading}
+              topTabs={!order?.is_finished ? [
+                { key:'ordered', label:'Ordered' },
+                { key:'all', label:'All stocks' },
+                { key:'low', label:'Low stock' },
+                { key:'zero', label:'Zero stock' },
+              ] : undefined}
+              activeTabKey={productFilter}
+              onTabChange={(k)=> { setProductFilter(k as any); setPage(1) }}
+            />
           </div>
         </Tab>
         <Tab key="details" title={<div className="flex items-center space-x-2"><span>{t('products.form.main')}</span></div>}>
@@ -336,7 +521,7 @@ export default function OrderDetailPage() {
                   <div className="bg-content1 border border-dashed border-foreground/20 rounded-lg p-10 text-center text-foreground/60">
                     <div className="text-xl mb-2 text-foreground">Вы еще не добавили оплату</div>
                     <div className="mb-6">Чтобы добавить оплату, нажмите на кнопку ниже</div>
-                    <Button color="primary" onPress={openPaymentModal} className="inline-flex items-center gap-2"><span className="text-xl">+</span> Добавить оплату</Button>
+                    <Button color="primary" onPress={()=> setIsPaymentModalOpen(true)} className="inline-flex items-center gap-2"><span className="text-xl">+</span> Добавить оплату</Button>
                   </div>
                 ))}
               </div>
@@ -352,8 +537,18 @@ export default function OrderDetailPage() {
         </Tab>
       </Tabs>
 
+      <ConfirmModal
+        isOpen={confirm.open}
+        title={confirm.action==='approve' ? 'Confirm accept order?' : 'Confirm reject order?'}
+        description={confirm.action==='approve' ? 'This will accept the order and update product stocks.' : 'The order will be marked as rejected.'}
+        confirmText={confirm.action==='approve' ? 'Accept' : 'Reject'}
+        confirmColor={confirm.action==='approve' ? 'success' : 'danger'}
+        onConfirm={async ()=> { const action = confirm.action; setConfirm({ open:false }); if (action) { await ordersService.update(String(id), { action } as any); const fresh = await ordersService.get(String(id)); setOrder(fresh); setProductFilter('ordered') } }}
+        onClose={()=> setConfirm({ open:false })}
+      />
+
       {isPaymentModalOpen && (
-        <CustomModal title="Оплата по заказу" isOpen={isPaymentModalOpen} onOpenChange={setIsPaymentModalOpen} onSubmit={submitPayment} submitLabel={saving ? 'Сохранение...' : 'Добавить оплату'} isSubmitting={saving}>
+        <CustomModal title="Оплата по заказу" isOpen={isPaymentModalOpen} onOpenChange={setIsPaymentModalOpen} onSubmit={async ()=>{ await ordersService.addPayment(String(id), { amount: Number(paymentForm.amount||0), payment_method: paymentForm.payment_method, description: paymentForm.description }); setIsPaymentModalOpen(false); await fetchPayments() }} submitLabel={'Добавить оплату'} isSubmitting={false}>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
               <label className="text-sm text-gray-700">Счет</label>

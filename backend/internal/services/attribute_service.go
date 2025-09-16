@@ -58,13 +58,13 @@ func (s *AttributeService) Create(ctx context.Context, body models.AttributeCrea
 	if body.Name == "" {
 		return nil, utils.BadRequest("VALIDATION_ERROR", "Attribute name is required", nil)
 	}
-	if body.Value == "" {
-		return nil, utils.BadRequest("VALIDATION_ERROR", "Attribute value is required", nil)
+	if len(body.Values) == 0 {
+		return nil, utils.BadRequest("VALIDATION_ERROR", "At least one attribute value is required", nil)
 	}
 
 	m := &models.Attribute{
 		Name:      body.Name,
-		Value:     body.Value,
+		Values:    body.Values,
 		IsActive:  true,
 		IsDeleted: false,
 	}
@@ -86,20 +86,14 @@ func (s *AttributeService) Update(ctx context.Context, id string, body models.At
 
 	update := bson.M{}
 	if body.Name != nil {
-		if *body.Name == "" {
-			return nil, utils.BadRequest("VALIDATION_ERROR", "Attribute name cannot be empty", nil)
-		}
+		if *body.Name == "" { return nil, utils.BadRequest("VALIDATION_ERROR", "Attribute name cannot be empty", nil) }
 		update["name"] = *body.Name
 	}
-	if body.Value != nil {
-		if *body.Value == "" {
-			return nil, utils.BadRequest("VALIDATION_ERROR", "Attribute value cannot be empty", nil)
-		}
-		update["value"] = *body.Value
+	if body.Values != nil {
+		if len(body.Values) == 0 { return nil, utils.BadRequest("VALIDATION_ERROR", "At least one attribute value is required", nil) }
+		update["values"] = body.Values
 	}
-	if body.IsActive != nil {
-		update["is_active"] = *body.IsActive
-	}
+	if body.IsActive != nil { update["is_active"] = *body.IsActive }
 
 	updated, err := s.repo.Update(ctx, oid, update)
 	if err != nil {

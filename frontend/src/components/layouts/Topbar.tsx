@@ -4,10 +4,14 @@ import { usePreferences } from '../../store/prefs'
 import { useQuery } from '@tanstack/react-query'
 import { storesService } from '../../services/storesService'
 import { BellIcon, MagnifyingGlassIcon, MoonIcon, SunIcon, ArrowRightOnRectangleIcon, QuestionMarkCircleIcon, UserCircleIcon } from '@heroicons/react/24/outline'
+import { useAuth } from '../../store/auth'
+import { useNavigate } from 'react-router-dom'
 
 export default function Topbar() {
   const { theme, setTheme } = useTheme()
   const { prefs, setSelectedStore } = usePreferences()
+  const { logout } = useAuth()
+  const navigate = useNavigate()
   const storesQ = useQuery({ queryKey:['stores','topbar'], queryFn: ()=> storesService.list({ page:1, limit:200 }), placeholderData:(p)=>p })
   const storeItems = [{ key:'__ALL__', label:'ALL STORES' }, ...((storesQ.data?.items||[]).map((s:any)=> ({ key:s.id, label:s.title })))]
   const toggle = () => setTheme(theme === 'light' ? 'dark' : 'light')
@@ -47,7 +51,10 @@ export default function Topbar() {
         <DropdownTrigger>
           <Avatar radius="md" size="sm" name="AA" className="cursor-pointer bg-primary-100 text-primary-600" />
         </DropdownTrigger>
-        <DropdownMenu aria-label="Profile menu" onAction={(key)=>{ /* intentionally no routing from profile */ }}>
+        <DropdownMenu aria-label="Profile menu" onAction={(key)=>{ 
+          if (key==='logout') { try { logout() } catch {} navigate('/login', { replace:true }) }
+          if (key==='profile') { navigate('/settings/profile') }
+        }}>
           <DropdownItem key="profile" startContent={<UserCircleIcon className="w-4 h-4" />}>Profile</DropdownItem>
           <DropdownItem key="help" startContent={<QuestionMarkCircleIcon className="w-4 h-4" />}>Help</DropdownItem>
           <DropdownItem key="logout" className="text-danger" color="danger" startContent={<ArrowRightOnRectangleIcon className="w-4 h-4" />}>Logout</DropdownItem>

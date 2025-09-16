@@ -72,7 +72,9 @@ export type Product = {
   weight: number
   dimensions: ProductDimensions
   category_id?: string
+  category_ids?: string[]
   category_name?: string
+  category_names?: string[]
   brand_id?: string
   brand_name?: string
   supplier_id?: string
@@ -120,6 +122,7 @@ export const productsService = {
     limit?: number
     search?: string
     category_id?: string
+    category_ids?: string[]
     brand_id?: string
     supplier_id?: string
     status?: string
@@ -155,6 +158,7 @@ export const productsService = {
     weight: number
     dimensions: ProductDimensions
     category_id?: string
+    category_ids?: string[]
     brand_id?: string
     supplier_id?: string
     company_id?: string
@@ -196,6 +200,7 @@ export const productsService = {
     weight: number
     dimensions: ProductDimensions
     category_id: string
+    category_ids: string[]
     brand_id: string
     supplier_id: string
     company_id: string
@@ -241,10 +246,10 @@ export const productsService = {
 
   bulkUnarchive: (ids: string[]) =>
     apiClient.post(`/api/products/bulk/unarchive`, { ids }).then(r => r.data),
-
+  
   stats: (params: { store_id?: string }) =>
     apiClient.get<{ data: ProductStats }>(`/api/products/stats`, { params }).then(r => r.data.data),
-
+  
   summary: (params: { store_id?: string }) =>
     apiClient.get<{ data: ProductSummary }>(`/api/products/summary`, { params }).then(r => r.data.data),
 } 

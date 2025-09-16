@@ -16,6 +16,7 @@ type Characteristic struct {
 	ID        primitive.ObjectID `bson:"_id,omitempty"`
 	Name      string             `bson:"name"`
 	Type      string             `bson:"type"`
+	Values    []string           `bson:"values,omitempty"`
 	IsActive  bool               `bson:"is_active"`
 	IsDeleted bool               `bson:"is_deleted"`
 	CreatedAt time.Time          `bson:"created_at"`
@@ -26,6 +27,7 @@ type CharacteristicDTO struct {
 	ID        string    `json:"id"`
 	Name      string    `json:"name"`
 	Type      string    `json:"type"`
+	Values    []string  `json:"values,omitempty"`
 	IsActive  bool      `json:"is_active"`
 	IsDeleted bool      `json:"is_deleted"`
 	CreatedAt time.Time `json:"created_at"`
@@ -33,14 +35,16 @@ type CharacteristicDTO struct {
 }
 
 type CharacteristicCreate struct {
-	Name string `json:"name"`
-	Type string `json:"type,omitempty"`
+	Name   string   `json:"name"`
+	Type   string   `json:"type,omitempty"`
+	Values []string `json:"values,omitempty"`
 }
 
 type CharacteristicUpdate struct {
-	Name     *string `json:"name"`
-	Type     *string `json:"type"`
-	IsActive *bool   `json:"is_active"`
+	Name     *string  `json:"name"`
+	Type     *string  `json:"type"`
+	Values   []string `json:"values"`
+	IsActive *bool    `json:"is_active"`
 }
 
 func ToCharacteristicDTO(m Characteristic) CharacteristicDTO {
@@ -48,6 +52,7 @@ func ToCharacteristicDTO(m Characteristic) CharacteristicDTO {
 		ID:        m.ID.Hex(),
 		Name:      m.Name,
 		Type:      m.Type,
+		Values:    m.Values,
 		IsActive:  m.IsActive,
 		IsDeleted: m.IsDeleted,
 		CreatedAt: m.CreatedAt,

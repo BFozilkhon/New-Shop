@@ -31,6 +31,8 @@ func RegisterWithTenant(app *fiber.App, roles *handlers.RoleHandler, users *hand
 	users.Register(protected)
 	suppliers.Register(protected)
 	// tenants endpoints are global-only for superadmin; do not register here
+	// Register tenant-scoped current endpoints instead
+	tenants.RegisterCurrent(protected)
 	companies.Register(protected)
 	stores.Register(protected)
 	categories.Register(protected)

@@ -6,9 +6,10 @@ import { repricingsService } from '../../services/repricingsService'
 import { productsService } from '../../services/productsService'
 import { Button, Input } from '@heroui/react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { BanknotesIcon, CubeIcon } from '@heroicons/react/24/outline'
+import { BanknotesIcon, CubeIcon, ArrowLeftIcon } from '@heroicons/react/24/outline'
 import ConfirmModal from '../../components/common/ConfirmModal'
 import { useTranslation } from 'react-i18next'
+import { Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Select, SelectItem } from '@heroui/react'
 
 export default function RepricingDetailPage() {
   const navigate = useNavigate()
@@ -23,6 +24,11 @@ export default function RepricingDetailPage() {
   const [confirm, setConfirm] = useState<{ open: boolean; action?: 'approve'|'reject' }>(()=> ({ open:false }))
   const [page, setPage] = useState(1)
   const [limit, setLimit] = useState(10)
+  const [bulkOpen, setBulkOpen] = useState(false)
+  const [bulkType, setBulkType] = useState<'supply'|'retail'>('supply')
+  const [bulkMode, setBulkMode] = useState<'absolute'|'percent'>('absolute')
+  const [bulkValue, setBulkValue] = useState<number>(0)
+  const [selected, setSelected] = useState<Set<string>>(new Set())
 
   useEffect(()=> { setItems(doc?.items || []) }, [doc])
 
@@ -94,10 +100,10 @@ export default function RepricingDetailPage() {
     { uid: 'barcode', name: t('repricing.detail.table.barcode','Barcode') },
     { uid: 'currency', name: t('repricing.detail.table.currency','Currency') },
     { uid: 'qty', name: t('repricing.detail.table.qty','Stock') },
-    { uid: 'old_supply', name: doc?.type==='price_change' ? t('repricing.detail.table.supplier','Supplier') : t('repricing.detail.table.old_supply','Old supply') },
-    { uid: 'old_retail', name: doc?.type==='delivery_price_change' ? t('repricing.detail.table.retail','Retail') : t('repricing.detail.table.old_retail','Old retail') },
-    { uid: 'supply_price', name: t('repricing.detail.table.new_supply','New Supplier Price') },
-    { uid: 'retail_price', name: t('repricing.detail.table.new_retail','New Retail Price') },
+    { uid: 'old_supply', name: doc?.type==='price_change' ? t('repricing.detail.table.supplier','Supply price') : t('repricing.detail.table.old_supply','Old supply price') },
+    { uid: 'old_retail', name: doc?.type==='delivery_price_change' ? t('repricing.detail.table.retail','Retail price') : t('repricing.detail.table.old_retail','Old retail price') },
+    { uid: 'supply_price', name: t('repricing.detail.table.new_supply','New supply price') },
+    { uid: 'retail_price', name: t('repricing.detail.table.new_retail','New retail price') },
     { uid: 'markup', name: t('repricing.detail.table.markup','Markup') },
     { uid: 'margin', name: t('repricing.detail.table.margin','Margin %') },
   ]), [t, doc?.type])
@@ -146,13 +152,19 @@ export default function RepricingDetailPage() {
 
   // paginate
   const pagedRows = useMemo(()=> productRows.slice((page-1)*limit, (page-1)*limit + limit), [productRows, page, limit])
+  const allowedBulkType: 'supply'|'retail' = (doc?.type === 'delivery_price_change') ? 'supply' : 'retail'
 
   return (
     <CustomMainBody>
       <div className="flex items-center justify-between mb-4">
         <h1 className="text-xl font-semibold">{doc?.name || t('repricing.header')}</h1>
         <div className="flex items-center gap-2">
-          <Button variant="flat" onPress={()=> navigate('/products/repricing')}>{t('common.back','Back')}</Button>
+          {doc?.status === 'APPROVED' ? (
+            <span className="px-2 py-1 rounded text-xs bg-success-100 text-success-700">Finished</span>
+          ) : doc?.status === 'REJECTED' ? (
+            <span className="px-2 py-1 rounded text-xs bg-danger-100 text-danger-700">Rejected</span>
+          ) : null}
+          <Button color="primary" startContent={<ArrowLeftIcon className="w-4 h-4" />} onPress={()=> navigate('/products/repricing')}>{t('common.back','Back')}</Button>
           {doc?.status === 'NEW' && (<><Button color="danger" variant="flat" onPress={reject}>{t('repricing.detail.reject','Reject')}</Button><Button color="primary" onPress={approve}>{t('repricing.detail.approve','Finish')}</Button></>)}
         </div>
       </div>
@@ -191,10 +203,10 @@ export default function RepricingDetailPage() {
         )}
         <div className="rounded-2xl bg-gray-900 border border-gray-700 p-5 flex items-center justify-between">
           <div>
-            <div className="text-xs text-gray-200">{t('repricing.detail.type','Repricing type')}</div>
+            <div className="text-xs text-gray-200">{t('repricing.detail_texts.type','Repricing type')}</div>
             <div className="mt-1 text-2xl font-semibold tracking-wide">
               <span className="text-blue-500">
-                {doc?.type === 'price_change' ? t('repricing.detail.type_price','Change the price') : doc?.type === 'delivery_price_change' ? t('repricing.detail.type_delivery','Change delivery price') : t('repricing.detail.type_currency','Change currency')}
+                {doc?.type === 'price_change' ? t('repricing.detail_texts.type_price','Change the retail price') : doc?.type === 'delivery_price_change' ? t('repricing.detail_texts.type_delivery','Change the supply price') : t('repricing.detail_texts.type_currency','Change currency')}
               </span>
             </div>
           </div>
@@ -215,8 +227,63 @@ export default function RepricingDetailPage() {
         onSearchChange={setTerm}
         onSearchClear={()=> setTerm('')}
         getRowClassName={(r:any)=> rowClass(r)}
-        rightAction={doc?.status === 'NEW' && <Button color="primary" variant="flat" onPress={save} isLoading={updateMutation.isPending}>{t('repricing.detail.save','Save')}</Button>}
+        rightAction={doc?.status === 'NEW' ? (<div className="flex gap-2">
+          <Button variant="flat" isDisabled={selected.size===0} onPress={()=> setBulkOpen(true)}>Bulk repricing</Button>
+          <Button color="primary" variant="flat" onPress={save} isLoading={updateMutation.isPending}>{t('repricing.detail.save','Save')}</Button>
+        </div>) : null}
+        selectable
+        selectedKeys={selected as any}
+        onSelectionChange={(k)=> setSelected(k as Set<string>)}
       />
+
+      {/* Bulk repricing modal */}
+      <Modal isOpen={bulkOpen} onOpenChange={setBulkOpen} size="2xl">
+        <ModalContent>
+          {(close)=> (
+            <>
+              <ModalHeader className="text-base">Bulk repricing</ModalHeader>
+              <ModalBody>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <Select label="Type" isDisabled selectedKeys={new Set([allowedBulkType])}>
+                    <SelectItem key="supply">Supply price</SelectItem>
+                    <SelectItem key="retail">Retail price</SelectItem>
+                  </Select>
+                  <Select label="Mode" selectedKeys={new Set([bulkMode])} onSelectionChange={(k)=> setBulkMode(((k as Set<string>).values().next().value) as any)}>
+                    <SelectItem key="absolute">Set absolute</SelectItem>
+                    <SelectItem key="percent">Change %</SelectItem>
+                  </Select>
+                  <Input type="number" label={bulkMode==='percent'?'Percent %':'Value'} value={String(bulkValue)} onValueChange={(v)=> setBulkValue(Number(v||0))} />
+                </div>
+                <div className="text-sm text-default-500">Applies to selected items ({selected.size}).</div>
+              </ModalBody>
+              <ModalFooter>
+                <Button variant="flat" onPress={()=> close()}>Cancel</Button>
+                <Button color="primary" onPress={()=>{
+                  // apply in-memory changes to current page rows
+                  setItems(prev=>{
+                    const map = new Map(prev.map((x:any)=> [x.product_id, x]))
+                    productRows.filter((r:any)=> (selected as any).has(r.product_id)).forEach((row:any)=>{
+                      const current = map.get(row.product_id) || { product_id: row.product_id }
+                      if (allowedBulkType==='supply') {
+                        const base = current.supply_price ?? row.supply_price ?? row.old_supply ?? 0
+                        const next = bulkMode==='absolute' ? bulkValue : Math.round(Number(base)* (1 + bulkValue/100))
+                        current.supply_price = next
+                      } else {
+                        const base = current.retail_price ?? row.retail_price ?? row.old_retail ?? 0
+                        const next = bulkMode==='absolute' ? bulkValue : Math.round(Number(base)* (1 + bulkValue/100))
+                        current.retail_price = next
+                      }
+                      map.set(row.product_id, current)
+                    })
+                    return Array.from(map.values())
+                  })
+                  close()
+                }}>Apply</Button>
+              </ModalFooter>
+            </>
+          )}
+        </ModalContent>
+      </Modal>
 
       <ConfirmModal
         isOpen={confirm.open}

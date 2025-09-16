@@ -54,6 +54,15 @@ export default function StoreEditPage() {
     { key: 'contacts', label: t('stores.sections.contacts') },
   ]), [t])
 
+  const ORDER: (keyof WeekSchedule)[] = ['mon','tue','wed','thu','fri','sat','sun']
+  const copyPrev = (day: keyof WeekSchedule) => {
+    const idx = ORDER.indexOf(day)
+    if (idx <= 0) return
+    const prev = ORDER[idx - 1]
+    const prevVal = working[prev]
+    setWorking({ ...working, [day]: { enabled: prevVal.enabled, open: prevVal.open, close: prevVal.close } })
+  }
+
   return (
     <CustomMainBody>
       <div className="flex items-center justify-between mb-4">
@@ -100,13 +109,17 @@ export default function StoreEditPage() {
               <div className="grid grid-cols-2 gap-6">
                 {Object.entries(working).map(([dayKey, d]) => {
                   const day = dayKey as keyof WeekSchedule
+                  const idx = ORDER.indexOf(day)
                   return (
                     <div key={day} className="rounded-xl border border-default-200 p-4 space-y-3">
                       <div className="flex items-center justify-between">
                         <div className="font-medium">{(DAY_LABELS[day] || '').toUpperCase()}</div>
-                        <Switch isSelected={d.enabled} onValueChange={(v) => setWorking({ ...working, [day]: { ...d, enabled: v } })} isDisabled={viewOnly}>
-                          {d.enabled ? t('stores.form.enabled') : t('stores.form.disabled')}
-                        </Switch>
+                        <div className="flex items-center gap-2">
+                          <Button size="sm" variant="flat" onPress={() => copyPrev(day)} isDisabled={viewOnly || idx<=0}>Copy prev</Button>
+                          <Switch isSelected={d.enabled} onValueChange={(v) => setWorking({ ...working, [day]: { ...d, enabled: v } })} isDisabled={viewOnly}>
+                            {d.enabled ? t('stores.form.enabled') : t('stores.form.disabled')}
+                          </Switch>
+                        </div>
                       </div>
                       <div className="grid grid-cols-2 gap-3">
                         <Input type="time" label={t('stores.form.open')} variant="bordered" classNames={{ inputWrapper: 'h-14' }} value={d.open} onValueChange={(v) => setWorking({ ...working, [day]: { ...d, open: v } })} isDisabled={viewOnly || !d.enabled} />

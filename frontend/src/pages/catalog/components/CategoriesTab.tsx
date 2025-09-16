@@ -4,7 +4,7 @@ import { categoriesService, Category } from '../../../services/categoriesService
 import CustomTable, { CustomColumn } from '../../../components/common/CustomTable'
 import { useSearchParams } from 'react-router-dom'
 import { Button, Chip, Dropdown, DropdownItem, DropdownMenu, DropdownTrigger } from '@heroui/react'
-import { EllipsisVerticalIcon, EyeIcon, PencilSquareIcon, TrashIcon } from '@heroicons/react/24/outline'
+import { EllipsisVerticalIcon, PencilSquareIcon, ChevronDownIcon, ChevronRightIcon } from '@heroicons/react/24/outline'
 import ConfirmModal from '../../../components/common/ConfirmModal'
 import CategoryModal from './CategoryModal'
 import { toast } from 'react-toastify'
@@ -23,34 +23,39 @@ export default function CategoriesTab() {
   
   const [confirm, setConfirm] = useState<{ open: boolean; id?: string; name?: string }>({ open: false })
   const [categoryModal, setCategoryModal] = useState<{ open: boolean; mode: 'create' | 'edit' | 'view'; category?: Category }>({ open: false, mode: 'create' })
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({})
 
-  const { data, isLoading } = useQuery({
-    queryKey: ['categories', page, limit, search],
-    queryFn: () => categoriesService.list({ page, limit, search }),
-    placeholderData: (prev) => prev,
-  })
+  const { data: tree, isLoading } = useQuery({ queryKey: ['categories','tree'], queryFn: () => categoriesService.getTree() })
 
   const deleteMutation = useMutation({
     mutationFn: categoriesService.remove,
-    onSuccess: () => {
-      toast.success(t('catalog.toast.deleted', { entity: 'Category' }))
-      qc.invalidateQueries({ queryKey: ['categories'] })
-      setConfirm({ open: false })
-    },
-    onError: (error: any) => {
-      toast.error(error?.response?.data?.message || t('catalog.toast.delete_failed', { entity: 'Category' }))
-    }
+    onSuccess: () => { toast.success(t('catalog.toast.deleted', { entity: 'Category' })); qc.invalidateQueries({ queryKey: ['categories'] }); setConfirm({ open: false }) },
+    onError: (error: any) => { toast.error(error?.response?.data?.message || t('catalog.toast.delete_failed', { entity: 'Category' })) }
   })
 
-  const items = useMemo(() => (data?.items || []).map((c: Category) => ({
-    id: c.id,
-    name: c.name,
-    status: c.is_active ? t('catalog.common.active') : t('catalog.common.inactive'),
-    created_at: new Date(c.created_at).toLocaleDateString(),
-  })), [data, t])
+  const flattenVisible = (nodes: Category[], depth = 0): any[] => {
+    const rows: any[] = []
+    for (const n of nodes || []) {
+      rows.push({
+        id: n.id,
+        name: n.name,
+        depth,
+        hasChildren: (n.children || []).length > 0,
+        status: n.is_active ? t('catalog.common.active') : t('catalog.common.inactive'),
+        created_at: new Date(n.created_at).toLocaleDateString(),
+        raw: n,
+        product_count: (n as any).product_count || 0,
+      })
+      if (expanded[n.id] && n.children?.length) rows.push(...flattenVisible(n.children, depth + 1))
+    }
+    return rows
+  }
+
+  const visibleItems = useMemo(()=> flattenVisible(tree || [], 0), [tree, expanded, t])
 
   const columns: CustomColumn[] = useMemo(() => [
-    { uid: 'name', name: t('catalog.table.name'), sortable: true },
+    { uid: 'name', name: t('catalog.table.name'), sortable: false },
+    { uid: 'product_count', name: t('catalog.table.num_products', { defaultValue: 'Number of products' }) },
     { uid: 'status', name: t('catalog.table.status') },
     { uid: 'created_at', name: t('catalog.table.created') },
     { uid: 'actions', name: t('catalog.table.actions') },
@@ -66,24 +71,28 @@ export default function CategoriesTab() {
 
   const renderCell = (item: any, key: string) => {
     switch (key) {
-      // no level column
-      case 'status':
+      case 'name': {
+        const open = !!expanded[item.id]
         return (
-          <Chip className="capitalize border-none gap-1 text-default-600" color={item.status === t('catalog.common.active') ? 'success' : 'danger'} size="sm" variant="dot">{item.status}</Chip>
+          <div className="flex items-center gap-2" style={{ paddingLeft: (item.depth || 0) * 20 }}>
+            {item.hasChildren ? (
+              <button className="p-1 rounded hover:bg-default-100" onClick={()=> setExpanded(s=> ({ ...s, [item.id]: !open }))} aria-label={open? 'collapse':'expand'}>
+                {open ? <ChevronDownIcon className="w-4 h-4" /> : <ChevronRightIcon className="w-4 h-4" />}
+              </button>
+            ) : <span className="w-5" />}
+            <span>{item.name}</span>
+          </div>
         )
+      }
+      case 'status':
+        return (<Chip className="capitalize border-none gap-1 text-default-600" color={item.status === t('catalog.common.active') ? 'success' : 'danger'} size="sm" variant="dot">{item.status}</Chip>)
       case 'actions': {
+        if (item.depth > 0) return null // actions only for root rows
+        const node = item.raw as Category
         const actions = [] as any[]
-        actions.push(
-          <DropdownItem key="view" startContent={<EyeIcon className="w-4 h-4" />} onPress={() => { const category = data?.items.find((c: any) => c.id === item.id); if (category) setCategoryModal({ open: true, mode: 'view', category }) }}>{t('common.view')}</DropdownItem>
-        )
         if (can('products.categories.update')) {
           actions.push(
-            <DropdownItem key="edit" startContent={<PencilSquareIcon className="w-4 h-4" />} onPress={() => { const category = data?.items.find((c: any) => c.id === item.id); if (category) setCategoryModal({ open: true, mode: 'edit', category }) }}>{t('common.edit')}</DropdownItem>
-          )
-        }
-        if (can('products.categories.delete')) {
-          actions.push(
-            <DropdownItem key="delete" className="text-danger" color="danger" startContent={<TrashIcon className="w-4 h-4" />} onPress={() => setConfirm({ open: true, id: item.id, name: item.name })}>{t('common.delete')}</DropdownItem>
+            <DropdownItem key="edit" startContent={<PencilSquareIcon className="w-4 h-4" />} onPress={() => setCategoryModal({ open: true, mode: 'edit', category: node })}>{t('common.edit')}</DropdownItem>
           )
         }
         return (
@@ -108,10 +117,10 @@ export default function CategoriesTab() {
     <>
       <CustomTable
         columns={columns}
-        items={items}
-        total={data?.total ?? 0}
+        items={visibleItems}
+        total={visibleItems.length}
         page={page}
-        limit={limit}
+        limit={Math.max(limit, visibleItems.length)}
         onPageChange={(p) => updateParams({ page: p })}
         onLimitChange={(l) => updateParams({ limit: l, page: 1 })}
         searchValue={search}
