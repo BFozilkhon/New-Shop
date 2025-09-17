@@ -116,6 +116,22 @@ export default function CustomDocumentUpload({
     return /\.(jpg|jpeg|png|gif|webp)$/i.test(url) || url.includes('/uploads/')
   }
 
+  const normalizeUploadUrl = (raw: string): string => {
+    if (!raw) return raw
+    const u = raw.trim()
+    // Fix protocol-relative or wrong host 'uploads'
+    if (u.startsWith('//uploads/')) return u.slice(1) // -> '/uploads/...'
+    const m = u.match(/^https?:\/\/([^/]+)(\/.*)?$/i)
+    if (m) {
+      const host = m[1]
+      const path = m[2] || ''
+      if (host.toLowerCase() === 'uploads') {
+        return path || '/uploads'
+      }
+    }
+    return u
+  }
+
   const getFileName = (url: string, index: number) => {
     return url.split('/').pop() || `file-${index + 1}`
   }
@@ -168,28 +184,30 @@ export default function CustomDocumentUpload({
       {value.length > 0 && (
         <div className="mt-4">
           <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-2 items-start">
-            {value.map((url, index) => (
-              <div key={index} className="relative inline-flex items-start group">
-                <div className="w-28 h-28 bg-default-100 rounded-md overflow-hidden flex items-center justify-center">
-                  {isImage(url) ? (
-                    <img src={url} alt={`upload-${index}`} className="w-full h-full object-cover" onError={(e)=>{(e.target as HTMLImageElement).src='/assets/images/logo.jpg'}} />
-                  ) : (
-                    <DocumentIcon className="w-8 h-8 text-default-400" />
+            {value.map((raw, index) => {
+              const normalized = normalizeUploadUrl(raw)
+              return (
+                <div key={index} className="relative inline-flex items-start group">
+                  <div className="w-28 h-28 bg-default-100 rounded-md overflow-hidden flex items-center justify-center">
+                    {isImage(normalized) ? (
+                      <img src={normalized} alt={`upload-${index}`} className="w-full h-full object-cover" onError={(e)=>{(e.target as HTMLImageElement).src='/assets/images/logo.jpg'}} />
+                    ) : (
+                      <DocumentIcon className="w-8 h-8 text-default-400" />
+                    )}
+                  </div>
+
+                  {!isReadOnly && (
+                    <button
+                      type="button"
+                      onClick={() => removeFile(index)}
+                      className="absolute -top-2 -right-2 opacity-0 group-hover:opacity-100 bg-white rounded-full p-1 shadow transition-opacity"
+                      aria-label={`Remove file ${index + 1}`}
+                    >
+                      <XMarkIcon className="w-4 h-4 text-danger" />
+                    </button>
                   )}
                 </div>
-
-                {!isReadOnly && (
-                  <button
-                    type="button"
-                    onClick={() => removeFile(index)}
-                    className="absolute -top-2 -right-2 opacity-0 group-hover:opacity-100 bg-white rounded-full p-1 shadow transition-opacity"
-                    aria-label={`Remove file ${index + 1}`}
-                  >
-                    <XMarkIcon className="w-4 h-4 text-danger" />
-                  </button>
-                )}
-              </div>
-            ))}
+              )})}
           </div>
         </div>
       )}
