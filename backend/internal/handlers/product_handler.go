@@ -24,6 +24,7 @@ func (h *ProductHandler) Register(r fiber.Router) {
 	r.Get("/products/summary", h.Summary)
 	r.Get("/products/:id", h.Get)
 	r.Post("/products", h.Create)
+	r.Post("/products/bulk/variants", h.BulkCreateVariants)
 	r.Patch("/products/:id", h.Update)
 	r.Delete("/products/:id", h.Delete)
 	r.Patch("/products/:id/stock", h.UpdateStock)
@@ -223,6 +224,15 @@ func (h *ProductHandler) BulkUnarchive(c *fiber.Ctx) error {
 	count, err := h.svc.BulkArchive(c.Context(), body.IDs, false, tenantID)
 	if err != nil { return err }
 	return utils.Success(c, map[string]any{"unarchived": count})
+}
+
+func (h *ProductHandler) BulkCreateVariants(c *fiber.Ctx) error {
+    var body models.BulkVariantsCreate
+    if err := c.BodyParser(&body); err != nil { return utils.BadRequest("INVALID_BODY", "Invalid request body", err) }
+    tenantID := c.Locals("tenant_id").(string)
+    items, err := h.svc.BulkCreateVariants(c.Context(), body, tenantID)
+    if err != nil { return err }
+    return c.Status(fiber.StatusCreated).JSON(utils.SuccessResponse[[]models.ProductDTO]{ Data: items })
 }
 
 func (h *ProductHandler) Stats(c *fiber.Ctx) error {

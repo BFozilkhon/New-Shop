@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react'
-import { Button, Card, CardBody } from '@heroui/react'
-import { CloudArrowUpIcon, XMarkIcon, DocumentIcon, PhotoIcon } from '@heroicons/react/24/outline'
+import { Button, Input } from '@heroui/react'
+import { CloudArrowUpIcon, XMarkIcon, DocumentIcon } from '@heroicons/react/24/outline'
 import { toast } from 'react-toastify'
 import { uploadService } from '../../services/uploadService'
 
@@ -30,6 +30,17 @@ export default function CustomDocumentUpload({
   const [isDragging, setIsDragging] = useState(false)
   const [uploading, setUploading] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const [url, setUrl] = useState('')
+
+  const handleAddUrl = () => {
+    const u = url.trim()
+    if (!u) return
+    const isImg = /\.(jpg|jpeg|png|gif|webp)$/i.test(u) || u.startsWith('http')
+    if (!isImg) { toast.error('Enter a valid image URL'); return }
+    if (value.length + 1 > maxFiles) { toast.error(`Maximum ${maxFiles} files allowed`); return }
+    onChange([...value, u])
+    setUrl('')
+  }
 
   const handleFileSelect = async (files: FileList | null) => {
     if (!files || files.length === 0) return
@@ -112,7 +123,11 @@ export default function CustomDocumentUpload({
   return (
     <div className={className}>
       {label && <label className="block text-sm font-medium mb-2">{label}</label>}
-      
+      {/* URL add row */}
+      <div className="flex items-center gap-2 mb-3">
+        <Input placeholder="https://...image.jpg" value={url} onValueChange={setUrl} variant="bordered" classNames={{ inputWrapper:'h-12' }} isReadOnly={isReadOnly} />
+        <Button color="primary" variant="flat" className="h-12 px-6 min-w-[96px]" onPress={handleAddUrl} isDisabled={isReadOnly || !url.trim()}>Add</Button>
+      </div>
       <div
         className={`w-full border rounded-lg bg-background ${isDragging ? 'ring-2 ring-primary/40' : 'shadow-sm'}`}
         onDragOver={handleDragOver}

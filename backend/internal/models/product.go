@@ -235,6 +235,30 @@ type ProductCreate struct {
 	IsPublished          bool                   `json:"is_published"`
 }
 
+// Bulk create from generated variants
+type VariantCreateItem struct {
+    NameSuffix    string    `json:"name_suffix"`         // appended to base name
+    Barcode       string    `json:"barcode"`
+    Images        []string  `json:"images"`
+    SupplyPrice   float64   `json:"cost_price"`
+    RetailPrice   float64   `json:"price"`
+}
+
+type BulkVariantsCreate struct {
+    // Base fields copied to all
+    Name        string            `json:"name"`
+    SKU         string            `json:"sku"`
+    Description string            `json:"description"`
+    Unit        string            `json:"unit"`
+    BrandID     string            `json:"brand_id"`
+    SupplierID  string            `json:"supplier_id"`
+    CategoryID  string            `json:"category_id"`
+    CategoryIDs []string          `json:"category_ids"`
+    StoreID     string            `json:"store_id"`
+    // Variants
+    Variants    []VariantCreateItem `json:"variants"`
+}
+
 type ProductUpdate struct {
 	Name        *string             `json:"name"`
 	SKU         *string             `json:"sku"`

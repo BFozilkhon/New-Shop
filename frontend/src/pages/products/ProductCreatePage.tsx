@@ -15,7 +15,7 @@ import CustomDocumentUpload from '../../components/common/CustomDocumentUpload'
 import { useTranslation } from 'react-i18next'
 import { storesService } from '../../services/storesService'
 import CategorySelector from './components/CategoryPicker'
-import VariantsBuilder, { GeneratedVariant } from './components/VariantsBuilder'
+import VariantsBuilder from './components/VariantsBuilder'
 // no custom modal needed
 import CharacteristicModal from '../catalog/components/CharacteristicModal'
 import BrandModal from '../catalog/components/BrandModal'
@@ -47,7 +47,7 @@ function generateEAN13() {
   return base + String(check)
 }
 
-export default function ProductCreatePage() {
+export default function ProductCreatePage({ embedded = false, onClose }: { embedded?: boolean; onClose?: ()=>void } = {}) {
   const { t } = useTranslation()
   const [active, setActive] = useState('main')
   const containerRef = useRef<HTMLDivElement>(null)
@@ -87,7 +87,8 @@ export default function ProductCreatePage() {
   const [expirationDate, setExpirationDate] = useState('')
   const [isRealizatsiya, setIsRealizatsiya] = useState(false)
   const [mode, setMode] = useState<'basic'|'variative'>('basic')
-  const [variants, setVariants] = useState<GeneratedVariant[]>([])
+  const [variants, setVariants] = useState<any[]>([])
+  const [variantExtras, setVariantExtras] = useState<any[]>([])
 
   const [images, setImages] = useState<string[]>([])
   const [brandModalOpen, setBrandModalOpen] = useState(false)
@@ -110,6 +111,18 @@ export default function ProductCreatePage() {
 
   const createMutation = useMutation({
     mutationFn: async () => {
+      if (mode==='variative') {
+        if (!name || !sku) throw new Error('Please fill Name and SKU')
+        if (!variantExtras || variantExtras.length===0) throw new Error('Add at least one variant with Barcode, Supply and Retail price')
+        const invalid = (variantExtras as any[]).some((v:any)=> !v.barcode || Number(v.cost_price||0)<=0 || Number(v.price||0)<=0)
+        if (invalid) throw new Error('Each variant must have Barcode, Supply price and Retail price')
+        const payload:any = {
+          name, sku, description, unit, brand_id: brandId||undefined, supplier_id: supplierId||undefined, category_id: categoryId||undefined, category_ids: (categoryIds&&categoryIds.length?categoryIds:undefined), store_id: storeId||undefined,
+          variants: (variantExtras||[]).map((v:any)=> ({ name_suffix: v.name, barcode: v.barcode, images: v.images||[], cost_price: Number(v.cost_price||0), price: Number(v.price||0) }))
+        }
+        const created:any = await productsService.bulkCreateVariants(payload)
+        return created
+      }
       if (!name || !sku || !barcode || price <= 0) throw new Error('Please fill in all required fields')
       const payload = {
         name,
@@ -144,7 +157,7 @@ export default function ProductCreatePage() {
         is_konsignatsiya: isKonsignatsiya,
         konsignatsiya_date: isKonsignatsiya && konsignatsiyaDate ? new Date(konsignatsiyaDate).toISOString() : undefined,
         expiration_date: expirationDate ? new Date(expirationDate).toISOString() : undefined,
-        additional_parameters: { ...(mode==='variative'? { variants: variants }: {}) },
+        additional_parameters: {},
         status,
         is_published: isPublished,
         is_active: isActive,
@@ -176,10 +189,12 @@ export default function ProductCreatePage() {
 
   return (
     <CustomMainBody>
-      <div className="flex items-center justify-between mb-4">
-        <h1 className="text-xl font-semibold">{t('products.create')}</h1>
-        <Button color="primary" startContent={<ArrowLeftIcon className="w-4 h-4" />} onPress={() => navigate('/products/catalog')}>{t('products.form.back')}</Button>
-      </div>
+      {!embedded && (
+        <div className="flex items-center justify-between mb-4">
+          <h1 className="text-xl font-semibold">{t('products.create')}</h1>
+          <Button color="primary" startContent={<ArrowLeftIcon className="w-4 h-4" />} onPress={() => navigate('/products/catalog')}>{t('products.form.back')}</Button>
+        </div>
+      )}
       <div className="grid grid-cols-[220px_1fr] gap-6">
         <aside className="sticky top-4 self-start rounded-lg border border-default-200 p-2 h-fit">
           <ul className="space-y-1">
@@ -253,16 +268,17 @@ export default function ProductCreatePage() {
                   </Select>
                 </div>
               </div>
-              <div><CustomDocumentUpload label={t('products.form.images')} accept="image/*" multiple={true} maxSize={10} maxFiles={10} value={images} onChange={setImages} /></div>
+              {mode==='basic' && (<div><CustomDocumentUpload label={t('products.form.images')} accept="image/*" multiple={true} maxSize={10} maxFiles={10} value={images} onChange={setImages} /></div>)}
             </section>
 
             {mode==='variative' && (
               <section id="sec-variations" data-section="variations" className="space-y-4">
                 <h3 className="text-base font-semibold">Variations</h3>
-                <VariantsBuilder value={variants} onChange={setVariants} baseSku={sku} />
+                <VariantsBuilder value={variants} onChange={(v:any)=> { setVariants(v as any) }} baseSku={sku} attributes={(catalogAttributesQuery.data?.items||[]).map((a:any)=> ({ id:a.id, name:a.name, values:a.values||[] }))} onExtrasChange={(items)=> setVariantExtras(items)} />
               </section>
             )}
 
+            {mode==='basic' && (
             <section id="sec-prices" data-section="prices" className="space-y-4">
               <h3 className="text-base font-semibold">{t('products.form.prices')}</h3>
               <div className="grid grid-cols-3 gap-6">
@@ -271,6 +287,7 @@ export default function ProductCreatePage() {
                 <Input isRequired label={'Retail price'} placeholder={'0'} type="number" variant="bordered" classNames={{ inputWrapper: 'h-14' }} labelPlacement="inside" value={price.toString()} onValueChange={(v) => { const p = parseFloat(v)||0; setPrice(p); if (costPrice>0) setMarkup(Math.round(((p - costPrice)/costPrice)*100)) }} endContent={<span className="px-2 text-default-500">UZS</span>} />
               </div>
             </section>
+            )}
 
             <section id="sec-quantity" data-section="quantity" className="space-y-4">
               <h3 className="text-base font-semibold">{t('products.form.quantity')}</h3>
@@ -362,8 +379,8 @@ export default function ProductCreatePage() {
             )}
           </div>
 
-          <div className="sticky bottom-0 mt-4 flex justify-end gap-2">
-            <Button variant="flat" onPress={() => navigate('/products/catalog')}>{t('products.form.cancel')}</Button>
+          <div className={`sticky bottom-0 mt-4 flex justify-end gap-2 ${embedded ? 'bg-white border-t border-default-200 p-4' : ''}`}>
+            <Button variant="flat" onPress={() => { if (embedded) { onClose && onClose() } else { navigate('/products/catalog') } }}>{t('products.form.cancel')}</Button>
             <Button color="primary" onPress={() => createMutation.mutate()} isLoading={createMutation.isPending}>{t('products.form.create_btn')}</Button>
           </div>
         </div>

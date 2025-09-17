@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"shop/backend/internal/models"
@@ -155,13 +156,21 @@ func (s *ProductService) Create(ctx context.Context, body models.ProductCreate, 
 		return nil, utils.BadRequest("VALIDATION_ERROR", "Product price must be non-negative", nil)
 	}
 
-	// Check if SKU already exists
-	exists, err := s.repo.CheckSKUExists(ctx, body.SKU, tenantID, nil)
-	if err != nil {
-		return nil, utils.Internal("SKU_CHECK_FAILED", "Unable to check SKU uniqueness", err)
+	// Check if SKU already exists (skip for bulk variant creation where all variants share same SKU)
+	skipSKUCheck := false
+	if body.AdditionalParameters != nil {
+		if _, ok := body.AdditionalParameters["variant_index"]; ok {
+			skipSKUCheck = true
+		}
 	}
-	if exists {
-		return nil, utils.BadRequest("SKU_EXISTS", "Product with this SKU already exists", nil)
+	if !skipSKUCheck {
+		exists, err := s.repo.CheckSKUExists(ctx, body.SKU, tenantID, nil)
+		if err != nil {
+			return nil, utils.Internal("SKU_CHECK_FAILED", "Unable to check SKU uniqueness", err)
+		}
+		if exists {
+			return nil, utils.BadRequest("SKU_EXISTS", "Product with this SKU already exists", nil)
+		}
 	}
 
 	// Validate relationships
@@ -504,6 +513,59 @@ func (s *ProductService) Update(ctx context.Context, id string, body models.Prod
 
 	// Return DTO with resolved names
 	return s.Get(ctx, updated.ID.Hex(), tenantID)
+}
+
+// BulkCreateVariants creates multiple products from a base payload and variants list
+func (s *ProductService) BulkCreateVariants(ctx context.Context, body models.BulkVariantsCreate, tenantID string) ([]models.ProductDTO, error) {
+    if body.Name == "" || body.SKU == "" { return nil, utils.BadRequest("VALIDATION_ERROR", "Name and SKU are required", nil) }
+    if len(body.Variants) == 0 { return nil, utils.BadRequest("VALIDATION_ERROR", "At least one variant required", nil) }
+
+    results := make([]models.ProductDTO, 0, len(body.Variants))
+    for idx, v := range body.Variants {
+        nm := body.Name
+        if v.NameSuffix != "" { nm = nm + " " + v.NameSuffix }
+        // Preserve base SKU in additional parameters and make stored SKU unique to avoid DB unique index conflicts
+        sku := body.SKU
+        if sku != "" { sku = sku + "-" + fmt.Sprintf("v%02d", idx+1) }
+        pc := models.ProductCreate{
+            Name: nm,
+            SKU:  sku,
+            Description: body.Description,
+            Price:       v.RetailPrice,
+            CostPrice:   v.SupplyPrice,
+            Stock:       0,
+            MinStock:    0,
+            MaxStock:    0,
+            Unit:        body.Unit,
+            Weight:      0,
+            Dimensions:  models.ProductDimensions{Length:0,Width:0,Height:0,Unit:"cm"},
+            CategoryID:  body.CategoryID,
+            CategoryIDs: body.CategoryIDs,
+            BrandID:     body.BrandID,
+            SupplierID:  body.SupplierID,
+            StoreID:     body.StoreID,
+            Images:      v.Images,
+            Attributes:  []models.ProductAttribute{},
+            Variants:    []models.ProductVariant{},
+            Warehouses:  []models.ProductWarehouse{},
+            CatalogAttributes: []models.ProductCatalogAttribute{},
+            CatalogCharacteristics: []models.ProductCatalogCharacteristic{},
+            CatalogParameters: []models.ProductCatalogParameter{},
+            Type:        "single",
+            IsBundle:    false,
+            Barcode:     v.Barcode,
+            IsDirtyCore: false,
+            IsRealizatsiya: false,
+            IsKonsignatsiya: false,
+            AdditionalParameters: map[string]any{"variant_index": idx, "base_sku": body.SKU},
+            Status:      "active",
+            IsPublished: false,
+        }
+        dto, err := s.Create(ctx, pc, tenantID)
+        if err != nil { return nil, err }
+        results = append(results, *dto)
+    }
+    return results, nil
 }
 
 func (s *ProductService) Delete(ctx context.Context, id string, tenantID string) error {

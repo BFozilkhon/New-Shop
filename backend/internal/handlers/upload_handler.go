@@ -20,7 +20,7 @@ func NewUploadHandler() *UploadHandler {
 
 func (h *UploadHandler) Register(r fiber.Router) {
 	r.Post("/upload/images", h.UploadImages)
-	r.Static("/uploads", "/tmp/uploads")
+	r.Static("/uploads", "/data/uploads")
 }
 
 func (h *UploadHandler) UploadImages(c *fiber.Ctx) error {
@@ -44,7 +44,7 @@ func (h *UploadHandler) UploadImages(c *fiber.Ctx) error {
 	uploadedUrls := []string{}
 
 	// Create uploads directory if it doesn't exist
-	uploadDir := fmt.Sprintf("/tmp/uploads/%s", tenantID)
+	uploadDir := fmt.Sprintf("/data/uploads/%s", tenantID)
 	if err := os.MkdirAll(uploadDir, 0755); err != nil {
 		return utils.Internal("UPLOAD_DIR_FAILED", "Failed to create upload directory", err)
 	}

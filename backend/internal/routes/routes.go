@@ -20,6 +20,8 @@ func Register(app *fiber.App, roles *handlers.RoleHandler, users *handlers.UserH
 	tenants.Register(protected)
 	// billing (global)
 	billing.Register(protected)
+	// Public static uploads (needed for <img src>)
+	app.Static("/uploads", "/data/uploads")
 }
 
 func RegisterWithTenant(app *fiber.App, roles *handlers.RoleHandler, users *handlers.UserHandler, auth *handlers.AuthHandler, suppliers *handlers.SupplierHandler, tenants *handlers.TenantHandler, tenantResolver *middleware.TenantResolver, companies *handlers.CompanyHandler, stores *handlers.StoreHandler, categories *handlers.CategoryHandler, attributes *handlers.AttributeHandler, characteristics *handlers.CharacteristicHandler, brands *handlers.BrandHandler, warehouses *handlers.WarehouseHandler, parameters *handlers.ParameterHandler, products *handlers.ProductHandler, upload *handlers.UploadHandler, leads *handlers.LeadHandler, customers *handlers.CustomerHandler, orders *handlers.OrderHandler, shopCustomers *handlers.ShopCustomerHandler, shopUnits *handlers.ShopUnitHandler, shopVendors *handlers.ShopVendorHandler, shopServices *handlers.ShopServiceHandler, shopContacts *handlers.ShopContactHandler, importHistory *handlers.ImportHistoryHandler, inventories *handlers.InventoryHandler, writeoffs *handlers.WriteOffHandler, repricings *handlers.RepricingHandler, transfers *handlers.TransferHandler, pricetags *handlers.PriceTagHandler) {
@@ -57,4 +59,6 @@ func RegisterWithTenant(app *fiber.App, roles *handlers.RoleHandler, users *hand
 	repricings.Register(protected)
 	transfers.Register(protected)
 	pricetags.Register(protected)
+	// Public static uploads (needed for <img src>)
+	app.Static("/uploads", "/data/uploads")
 } 

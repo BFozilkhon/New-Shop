@@ -252,4 +252,6 @@ export const productsService = {
   
   summary: (params: { store_id?: string }) =>
     apiClient.get<{ data: ProductSummary }>(`/api/products/summary`, { params }).then(r => r.data.data),
+  bulkCreateVariants: (payload: { name: string; sku: string; description?: string; unit?: string; brand_id?: string; supplier_id?: string; category_id?: string; category_ids?: string[]; store_id?: string; variants: { name_suffix?: string; barcode: string; images?: string[]; cost_price?: number; price?: number }[] }) =>
+    apiClient.post<{ data: Product[] }>(`/api/products/bulk/variants`, payload).then(r => r.data.data as any),
 } 

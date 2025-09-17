@@ -11,6 +11,7 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'react-toastify'
 import { useQuery } from '@tanstack/react-query'
 import ConfirmModal from '../../components/common/ConfirmModal'
+import CreateProductDrawer from '../products/components/CreateProductDrawer'
 
 export default function OrderDetailPage() {
   const { t } = useTranslation()
@@ -205,6 +206,8 @@ export default function OrderDetailPage() {
     },
     enabled: productFilter !== 'ordered'
   })
+
+  const [drawerOpen, setDrawerOpen] = useState(false)
 
   // Auto-order by full barcode scan
   useEffect(()=>{
@@ -419,6 +422,8 @@ export default function OrderDetailPage() {
               onSearchChange={setTerm}
               onSearchClear={()=> setTerm('')}
               isLoading={!order?.is_finished && productFilter!=='ordered' && listLoading}
+              onCreate={!order?.is_finished && productFilter!=='ordered' && term ? (()=> setDrawerOpen(true)) : undefined}
+              createLabel={term ? `Create "${term}"` : 'Create product'}
               topTabs={!order?.is_finished ? [
                 { key:'ordered', label:'Ordered' },
                 { key:'all', label:'All stocks' },
@@ -576,6 +581,8 @@ export default function OrderDetailPage() {
           </div>
         </CustomModal>
       )}
+
+      <CreateProductDrawer isOpen={drawerOpen} onOpenChange={setDrawerOpen} onCreated={(p)=>{ if(p){ attachProduct(p) } }} />
     </CustomMainBody>
   )
 }

@@ -8,7 +8,7 @@ services:
   backend:
     build: ./backend
     environment:
-      - ENV=development
+      - ENV=production
       - PORT=8081
       - MONGO_URI=mongodb://mongo:27017
       - DB_NAME=shop
@@ -17,8 +17,9 @@ services:
     depends_on: [mongo]
     ports:
       - "8081:8081"
+    user: "0:0"
     volumes:
-      - ./uploads:/tmp/uploads
+      - uploads-data:/data/uploads
   frontend:
     build: ./frontend
     environment:
@@ -29,3 +30,4 @@ services:
     command: ["npm", "run", "preview", "--", "--host", "--port", "5174"]
 volumes:
   mongo-data: {}
+  uploads-data: {}
