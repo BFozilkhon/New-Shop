@@ -144,7 +144,7 @@ func main() {
 		return c.Next()
 	})
 	// Serve uploaded files publicly so frontend can load images without auth
-	app.Static("/uploads", "/tmp/uploads")
+	app.Static("/uploads", "/data/uploads")
 	app.Get("/health", func(c *fiber.Ctx) error { return c.SendString("ok") })
 
 	roleRepo := repositories.NewRoleRepository(db)
