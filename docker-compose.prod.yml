@@ -18,6 +18,8 @@ services:
       - mongo
     ports:
       - "8081:8081"
+    volumes:
+      - uploads-data:/data/uploads
   frontend:
     build:
       context: ./frontend
@@ -60,4 +62,5 @@ volumes:
   mongo-data: {}
   frontend-build: {}
   certbot-webroot: {}
-  letsencrypt: {} 
+  letsencrypt: {}
+  uploads-data: {} 
