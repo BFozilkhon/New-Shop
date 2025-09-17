@@ -119,16 +119,15 @@ export default function CustomDocumentUpload({
   const normalizeUploadUrl = (raw: string): string => {
     if (!raw) return raw
     const u = raw.trim()
-    // Fix protocol-relative or wrong host 'uploads'
-    if (u.startsWith('//uploads/')) return u.slice(1) // -> '/uploads/...'
-    const m = u.match(/^https?:\/\/([^/]+)(\/.*)?$/i)
+    // Fix protocol-relative
+    if (u.startsWith('//uploads/')) return u.replace(/^\/\//, '/') // -> '/uploads/...'
+    // Fix explicit wrong host 'uploads'
+    const m = u.match(/^https?:\/\/uploads\/(.*)$/i)
     if (m) {
-      const host = m[1]
-      const path = m[2] || ''
-      if (host.toLowerCase() === 'uploads') {
-        return path || '/uploads'
-      }
+      return `/uploads/${m[1]}`
     }
+    // Fix path without leading slash
+    if (u.startsWith('uploads/')) return `/${u}`
     return u
   }
 
