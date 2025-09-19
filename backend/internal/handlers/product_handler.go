@@ -98,6 +98,12 @@ func (h *ProductHandler) List(c *fiber.Ctx) error {
 	catIDStrs := make([]string, 0, len(vals))
 	for _, v := range vals { if len(v) > 0 { catIDStrs = append(catIDStrs, string(v)) } }
 
+	// Product type filters
+	productType := c.Query("product_type", "")
+	valsEx := qa.PeekMulti("exclude_types[]")
+	excludeTypes := make([]string, 0, len(valsEx))
+	for _, v := range valsEx { if len(v) > 0 { excludeTypes = append(excludeTypes, string(v)) } }
+
 	ctx := context.WithValue(c.Context(), "low_stock", lowPtr)
 	ctx = context.WithValue(ctx, "zero_stock", zeroPtr)
 	ctx = context.WithValue(ctx, "archived", archivedPtr)
@@ -105,7 +111,7 @@ func (h *ProductHandler) List(c *fiber.Ctx) error {
     ctx = context.WithValue(ctx, "is_konsignatsiya", isKonsPtr)
     ctx = context.WithValue(ctx, "is_dirty_core", isDirtyPtr)
 
-	items, total, err := h.svc.List(ctx, page, limit, search, categoryID, catIDStrs, brandID, supplierID, status, isActivePtr, isBundlePtr, minPricePtr, maxPricePtr, tenantID, storeID)
+	items, total, err := h.svc.List(ctx, page, limit, search, categoryID, catIDStrs, brandID, supplierID, status, isActivePtr, isBundlePtr, minPricePtr, maxPricePtr, tenantID, storeID, productType, excludeTypes)
 	if err != nil {
 		return err
 	}

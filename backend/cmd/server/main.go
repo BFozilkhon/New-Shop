@@ -176,6 +176,7 @@ func main() {
 	repricingRepo := repositories.NewRepricingRepository(db)
 	transferRepo := repositories.NewTransferRepository(db)
 	priceTagRepo := repositories.NewPriceTagRepository(db)
+	exchangeRateRepo := repositories.NewExchangeRateRepository(db)
 
 	roleSvc := services.NewRoleService(roleRepo)
 	userSvc := services.NewUserService(userRepo, roleRepo)
@@ -190,10 +191,10 @@ func main() {
 	brandSvc := services.NewBrandService(brandRepo)
 	warehouseSvc := services.NewWarehouseService(warehouseRepo)
 	parameterSvc := services.NewParameterService(parameterRepo)
-	productSvc := services.NewProductService(productRepo, categoryRepo, brandRepo, supplierRepo)
+	productSvc := services.NewProductService(productRepo, categoryRepo, brandRepo, supplierRepo, importHistoryRepo)
 	leadSvc := services.NewLeadService(leadRepo)
 	customerSvc := services.NewCustomerService(customerRepo)
-	orderSvc := services.NewOrderService(orderRepo, productRepo, supplierRepo, storeRepo)
+	orderSvc := services.NewOrderService(orderRepo, productRepo, supplierRepo, storeRepo, writeOffRepo)
 	// set singleton for cross-handler use (supplier stats)
 	services.SetOrderService(orderSvc)
 
@@ -205,11 +206,12 @@ func main() {
 	importHistorySvc := services.NewImportHistoryService(importHistoryRepo)
 	paymentSvc := services.NewPaymentService(paymentRepo)
 	statsSvc := services.NewStatsService(statsRepo)
-	inventorySvc := services.NewInventoryService(inventoryRepo, storeRepo, productRepo)
+	inventorySvc := services.NewInventoryService(inventoryRepo, storeRepo, productRepo, importHistoryRepo)
 	writeOffSvc := services.NewWriteOffService(writeOffRepo, storeRepo, productRepo)
 	repricingSvc := services.NewRepricingService(repricingRepo, storeRepo, productRepo)
 	transferSvc := services.NewTransferService(transferRepo, storeRepo, productRepo)
 	priceTagSvc := services.NewPriceTagService(priceTagRepo)
+	exchangeRateSvc := services.NewExchangeRateService(exchangeRateRepo)
 
 	roleHandler := handlers.NewRoleHandler(roleSvc)
 	userHandler := handlers.NewUserHandler(userSvc)
@@ -242,6 +244,7 @@ func main() {
 	repricingHandler := handlers.NewRepricingHandler(repricingSvc)
 	transferHandler := handlers.NewTransferHandler(transferSvc)
 	priceTagHandler := handlers.NewPriceTagHandler(priceTagSvc)
+	exchangeRateHandler := handlers.NewExchangeRateHandler(exchangeRateSvc)
 
 	_ = middleware.NewAuthz(userRepo, roleRepo)
 	tenantResolver := middleware.NewTenantResolver(tenantRepo)
@@ -251,7 +254,7 @@ func main() {
 	// global stats
 	statsHandler.Register(app.Group("/api"))
 	// Tenant-scoped endpoints
-	routes.RegisterWithTenant(app, roleHandler, userHandler, authHandler, supplierHandler, tenantHandler, tenantResolver, companyHandler, storeHandler, categoryHandler, attributeHandler, characteristicHandler, brandHandler, warehouseHandler, parameterHandler, productHandler, uploadHandler, leadHandler, customerHandler, orderHandler, shopCustomerHandler, shopUnitHandler, shopVendorHandler, shopServiceHandler, shopContactHandler, importHistoryHandler, inventoryHandler, writeOffHandler, repricingHandler, transferHandler, priceTagHandler)
+	routes.RegisterWithTenant(app, roleHandler, userHandler, authHandler, supplierHandler, tenantHandler, tenantResolver, companyHandler, storeHandler, categoryHandler, attributeHandler, characteristicHandler, brandHandler, warehouseHandler, parameterHandler, productHandler, uploadHandler, leadHandler, customerHandler, orderHandler, shopCustomerHandler, shopUnitHandler, shopVendorHandler, shopServiceHandler, shopContactHandler, importHistoryHandler, inventoryHandler, writeOffHandler, repricingHandler, transferHandler, priceTagHandler, exchangeRateHandler)
 
 	addr := ":" + cfg.Port
 	logger.Info("starting http server", zap.String("addr", addr), zap.String("env", cfg.Env))

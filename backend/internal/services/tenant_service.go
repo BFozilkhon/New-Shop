@@ -40,7 +40,10 @@ func (s *TenantService) Update(ctx context.Context, id string, t models.Tenant) 
 	if t.Phone != "" { update["phone"] = t.Phone }
 	if t.Status != "" { update["status"] = t.Status }
 	if t.Plan != "" { update["plan"] = t.Plan }
-	if t.Settings.Language != "" || t.Settings.Timezone != "" || t.Settings.Currency != "" { update["settings"] = t.Settings }
+	// Update settings if any relevant field provided
+	if t.Settings.Language != "" || t.Settings.Timezone != "" || t.Settings.Currency != "" || t.Settings.ExchangeRate != 0 || t.Settings.DateFormat != "" || len(t.Settings.Features) > 0 || len(t.Settings.Integrations) > 0 {
+		update["settings"] = t.Settings
+	}
 	return s.repo.Update(ctx, oid, update)
 }
 

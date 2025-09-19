@@ -18,10 +18,11 @@ type OrderService struct {
 	productRepo *repositories.ProductRepository
 	supplierRepo *repositories.SupplierRepository
 	storeRepo   *repositories.StoreRepository
+	writeOffRepo *repositories.WriteOffRepository
 }
 
-func NewOrderService(repo *repositories.OrderRepository, productRepo *repositories.ProductRepository, supplierRepo *repositories.SupplierRepository, storeRepo *repositories.StoreRepository) *OrderService {
-	return &OrderService{repo: repo, productRepo: productRepo, supplierRepo: supplierRepo, storeRepo: storeRepo}
+func NewOrderService(repo *repositories.OrderRepository, productRepo *repositories.ProductRepository, supplierRepo *repositories.SupplierRepository, storeRepo *repositories.StoreRepository, writeOffRepo *repositories.WriteOffRepository) *OrderService {
+	return &OrderService{repo: repo, productRepo: productRepo, supplierRepo: supplierRepo, storeRepo: storeRepo, writeOffRepo: writeOffRepo}
 }
 
 func (s *OrderService) List(ctx context.Context, f models.OrderFilterRequest, tenantID string) ([]models.Order, int64, error) {
@@ -75,7 +76,31 @@ func (s *OrderService) Create(ctx context.Context, body models.CreateOrderReques
 		}
 	}
 
-	// Map items
+	// Return order: copy items from source order if provided
+	if strings.ToLower(order.Type) == "return_order" && strings.TrimSpace(body.ReturnedSupplierOrderID) != "" {
+		if srcID, err := primitive.ObjectIDFromHex(body.ReturnedSupplierOrderID); err == nil {
+			src, err := s.repo.Get(ctx, srcID, tenantID)
+			if err == nil && strings.ToLower(src.StatusID) == "accepted" {
+				order.ReturnedSupplierOrderID = src.ID.Hex()
+				order.ReturnedSupplierOrderName = src.Name
+				for _, it := range src.Items {
+					order.Items = append(order.Items, models.OrderItem{
+						ProductID: it.ProductID,
+						ProductName: it.ProductName,
+						ProductSKU: it.ProductSKU,
+						Quantity: it.Quantity,
+						UnitPrice: it.UnitPrice,
+						TotalPrice: it.UnitPrice*float64(it.Quantity),
+						SupplyPrice: it.SupplyPrice,
+						RetailPrice: it.RetailPrice,
+						Unit: it.Unit,
+					})
+				}
+			}
+		}
+	}
+
+	// Map items from payload (fallback or additional)
 	for _, it := range body.Items {
 		var pid primitive.ObjectID
 		if it.ProductID != "" { if x, err := primitive.ObjectIDFromHex(it.ProductID); err == nil { pid = x } }
@@ -128,8 +153,9 @@ func (s *OrderService) Update(ctx context.Context, id string, body models.Update
 	if body.SaleProgress != 0 { upd["sale_progress"] = body.SaleProgress }
 
 	// Rebuild items if provided
+	var rebuilt []models.OrderItem
 	if len(body.Items) > 0 {
-		items := make([]models.OrderItem, 0, len(body.Items))
+		rebuilt = make([]models.OrderItem, 0, len(body.Items))
 		for _, it := range body.Items {
 			var pid primitive.ObjectID
 			if it.ProductID != "" { if x, err := primitive.ObjectIDFromHex(it.ProductID); err == nil { pid = x } }
@@ -139,34 +165,73 @@ func (s *OrderService) Update(ctx context.Context, id string, body models.Update
 			unitPrice := it.UnitPrice
 			supply := it.SupplyPrice
 			retail := it.RetailPrice
-			items = append(items, models.OrderItem{ ProductID: pid, ProductName: name, ProductSKU: sku, Quantity: q, UnitPrice: unitPrice, TotalPrice: unitPrice*float64(q), SupplyPrice: supply, RetailPrice: retail, Unit: it.Unit })
+			// allow client to send returned_quantity for return orders; keep in ReturnedQuantity field
+			returnedQ := it.ReturnedQuantity
+			if returnedQ < 0 { returnedQ = 0 }
+			if returnedQ > q { returnedQ = q }
+			rebuilt = append(rebuilt, models.OrderItem{ ProductID: pid, ProductName: name, ProductSKU: sku, Quantity: q, UnitPrice: unitPrice, TotalPrice: unitPrice*float64(q), SupplyPrice: supply, RetailPrice: retail, Unit: it.Unit, ReturnedQuantity: returnedQ })
 		}
-		upd["items"] = items
+		upd["items"] = rebuilt
 	}
 	if body.TotalPrice != 0 { upd["total_price"] = body.TotalPrice }
 	if body.TotalSupplyPrice != 0 { upd["total_supply_price"] = body.TotalSupplyPrice }
 	if body.TotalRetailPrice != 0 { upd["total_retail_price"] = body.TotalRetailPrice }
 	if body.TotalPaidAmount != 0 { upd["total_paid_amount"] = body.TotalPaidAmount }
 
+	// Items to use for stock effects (prefer rebuilt from this request)
+	itemsForApply := current.Items
+	if len(rebuilt) > 0 { itemsForApply = rebuilt }
+
 	// Approve/Reject actions
 	if body.Action == "approve" || body.Action == "reject" {
 		if body.Action == "approve" && !current.IsFinished {
-			// For each item: increase stock and optionally update prices
-			for _, it := range current.Items {
-				if it.ProductID == primitive.NilObjectID { continue }
-				p, err := s.productRepo.Get(ctx, it.ProductID, tenantID)
-				if err != nil { if p2, e2 := s.productRepo.GetByID(ctx, it.ProductID); e2 == nil { p = p2 } else { return nil, utils.BadRequest("PRODUCT_NOT_FOUND", "Product not found for order", err) } }
-				newStock := p.Stock + int(it.Quantity)
-				if err := s.productRepo.UpdateStock(ctx, p.ID, p.TenantID, newStock); err != nil { return nil, utils.Internal("PRODUCT_STOCK_UPDATE_FAILED", "Failed to update product stock", err) }
-				// update prices if provided (>0)
-				if it.SupplyPrice > 0 || it.RetailPrice > 0 {
-					_ = s.productRepo.UpdatePrices(ctx, p.ID, p.TenantID, it.SupplyPrice, it.RetailPrice)
+			if strings.ToLower(current.Type) == "return_order" {
+				// Decrease stock for each item; use ReturnedQuantity if present, else Quantity
+				for _, it := range itemsForApply {
+					if it.ProductID == primitive.NilObjectID { continue }
+					qty := it.ReturnedQuantity
+					if qty <= 0 || qty > it.Quantity { qty = it.Quantity }
+					p, err := s.productRepo.Get(ctx, it.ProductID, tenantID)
+					if err != nil { if p2, e2 := s.productRepo.GetByID(ctx, it.ProductID); e2 == nil { p = p2 } else { return nil, utils.BadRequest("PRODUCT_NOT_FOUND", "Product not found for return order", err) } }
+					newStock := p.Stock - int(qty)
+					if newStock < 0 { newStock = 0 }
+					if err := s.productRepo.UpdateStock(ctx, p.ID, p.TenantID, newStock); err != nil { return nil, utils.Internal("PRODUCT_STOCK_UPDATE_FAILED", "Failed to update product stock", err) }
 				}
+				// Mark accepted
+				upd["is_finished"] = true
+				upd["status_id"] = "accepted"
+				upd["accepted_by"] = user
+				upd["accepting_date"] = time.Now().UTC().Format(time.RFC3339)
+				// Create a write-off document capturing the return with returned quantities
+				if s.writeOffRepo != nil {
+					go func(){
+						defer func(){ _ = recover() }()
+						woSvc := NewWriteOffService(s.writeOffRepo, s.storeRepo, s.productRepo)
+						woItems := make([]models.WriteOffItemInput, 0, len(itemsForApply))
+						for _, it := range itemsForApply {
+							qty := it.ReturnedQuantity; if qty <= 0 || qty > it.Quantity { qty = it.Quantity }
+							woItems = append(woItems, models.WriteOffItemInput{ ProductID: it.ProductID.Hex(), ProductName: it.ProductName, ProductSKU: it.ProductSKU, Barcode: "", Qty: float64(qty), Unit: it.Unit, SupplyPrice: it.SupplyPrice, RetailPrice: it.RetailPrice })
+						}
+						created, err := woSvc.Create(ctx, models.CreateWriteOffRequest{ Name: "Order return write-off", FromFile: false, ShopID: current.ShopID, Reason: "order_return" }, tenantID, models.InventoryUser{ ID: user.ID, Name: user.Name })
+						if err == nil { _, _ = woSvc.Update(ctx, created.ID.Hex(), models.UpdateWriteOffRequest{ Name: created.Name, Items: woItems, Action: "approve" }, tenantID, models.InventoryUser{ ID: user.ID, Name: user.Name }) }
+					}()
+				}
+			} else {
+				// Supplier order: increase stock and optionally update prices
+				for _, it := range itemsForApply {
+					if it.ProductID == primitive.NilObjectID { continue }
+					p, err := s.productRepo.Get(ctx, it.ProductID, tenantID)
+					if err != nil { if p2, e2 := s.productRepo.GetByID(ctx, it.ProductID); e2 == nil { p = p2 } else { return nil, utils.BadRequest("PRODUCT_NOT_FOUND", "Product not found for order", err) } }
+					newStock := p.Stock + int(it.Quantity)
+					if err := s.productRepo.UpdateStock(ctx, p.ID, p.TenantID, newStock); err != nil { return nil, utils.Internal("PRODUCT_STOCK_UPDATE_FAILED", "Failed to update product stock", err) }
+					// update prices if provided (>0)
+					if it.SupplyPrice > 0 || it.RetailPrice > 0 { _ = s.productRepo.UpdatePrices(ctx, p.ID, p.TenantID, it.SupplyPrice, it.RetailPrice) }
+				}
+				upd["is_finished"] = true
+				upd["status_id"] = "accepted"
+				upd["accepted_by"] = user
+				upd["accepting_date"] = time.Now().UTC().Format(time.RFC3339)
 			}
-			upd["is_finished"] = true
-			upd["status_id"] = "accepted"
-			upd["accepted_by"] = user
-			upd["accepting_date"] = time.Now().UTC().Format(time.RFC3339)
 		} else if body.Action == "reject" && !current.IsFinished {
 			upd["is_finished"] = true
 			upd["status_id"] = "rejected"

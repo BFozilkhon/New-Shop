@@ -10,6 +10,7 @@ import ConfirmModal from '../../components/common/ConfirmModal'
 import { toast } from 'react-toastify'
 import CustomTable, { type CustomColumn } from '../../components/common/CustomTable'
 import { useTranslation } from 'react-i18next'
+import useCurrency from '../../hooks/useCurrency'
 
 export default function InventoryDetailPage() {
   const { t } = useTranslation()
@@ -22,6 +23,7 @@ export default function InventoryDetailPage() {
   const { data, refetch } = useQuery({ queryKey: ['inventory', id], queryFn: ()=> inventoriesService.get(String(id)), enabled: !!id })
   const isFinished = !!data?.finished_at
   const isRejected = String(data?.status_id||'') === 'rejected'
+  const { format: fmt } = useCurrency()
 
   // Items state for scanning/results
   const [items, setItems] = useState<any[]>([])
@@ -51,7 +53,7 @@ export default function InventoryDetailPage() {
     queryKey: ['products-for-scan', term, productFilter, pageL, limitL],
     queryFn: async ()=> {
       if (productFilter!=='all') return { items: [], total: 0 } as any
-      const params:any = { page: pageL, limit: limitL, search: term }
+      const params:any = { page: pageL, limit: limitL, search: term, exclude_types:['SET','SERVICE'] }
       return productsService.list(params)
     },
     placeholderData: (p)=> p,
@@ -83,7 +85,7 @@ export default function InventoryDetailPage() {
     if (!code || !/^\d{8,14}$/.test(code)) return
     const tmr = setTimeout(async ()=>{
       try {
-        const res:any = await productsService.list({ page:1, limit:10, search: code })
+        const res:any = await productsService.list({ page:1, limit:10, search: code, exclude_types:['SET','SERVICE'] })
         const found = (res?.items||[]).find((p:any)=> String(p?.barcode||'') === code)
         if (found) {
           addProduct(found)
@@ -205,12 +207,12 @@ export default function InventoryDetailPage() {
             <StatCard icon={ArrowTrendingUpIcon} title={t('inventory.detail.cards.surpluses_n')} value={`${stats.surplusCount}`} unit={t('inventory.detail.cards.units')} />
           </div>
           <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
-            <StatMoney icon={BanknotesIcon} title={t('inventory.detail.cards.shortages_cost')} value={items.reduce((s:any,x:any)=> s + Math.max(0, Number(x.declared||0)-Number(x.scanned||0)) * Number(x.cost_price||0), 0)} />
-            <StatMoney icon={BanknotesIcon} title={t('inventory.detail.cards.shortages_sale')} value={items.reduce((s:any,x:any)=> s + Math.max(0, Number(x.declared||0)-Number(x.scanned||0)) * Number(x.price||0), 0)} />
-            <StatMoney icon={BanknotesIcon} title={t('inventory.detail.cards.surplus_cost')} value={items.reduce((s:any,x:any)=> s + Math.max(0, Number(x.scanned||0)-Number(x.declared||0)) * Number(x.cost_price||0), 0)} />
+            <StatMoney icon={BanknotesIcon} title={t('inventory.detail.cards.shortages_cost')} value={fmt(items.reduce((s:any,x:any)=> s + Math.max(0, Number(x.declared||0)-Number(x.scanned||0)) * Number(x.cost_price||0), 0))} />
+            <StatMoney icon={BanknotesIcon} title={t('inventory.detail.cards.shortages_sale')} value={fmt(items.reduce((s:any,x:any)=> s + Math.max(0, Number(x.declared||0)-Number(x.scanned||0)) * Number(x.price||0), 0))} />
+            <StatMoney icon={BanknotesIcon} title={t('inventory.detail.cards.surplus_cost')} value={fmt(items.reduce((s:any,x:any)=> s + Math.max(0, Number(x.scanned||0)-Number(x.declared||0)) * Number(x.cost_price||0), 0))} />
           </div>
           <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
-            <StatMoney icon={BanknotesIcon} title={t('inventory.detail.cards.surplus_sale')} value={items.reduce((s:any,x:any)=> s + Math.max(0, Number(x.scanned||0)-Number(x.declared||0)) * Number(x.price||0), 0)} />
+            <StatMoney icon={BanknotesIcon} title={t('inventory.detail.cards.surplus_sale')} value={fmt(items.reduce((s:any,x:any)=> s + Math.max(0, Number(x.scanned||0)-Number(x.declared||0)) * Number(x.price||0), 0))} />
           </div>
         </Tab>
         <Tab key="scan" title={<div className="flex-1 text-center">{t('inventory.detail.tabs.scan')}</div>}>
@@ -259,10 +261,10 @@ export default function InventoryDetailPage() {
                     case 'diff_amount': {
                       const val = Number(row.diff_amount||0)
                       const cls = val>0?'text-success-600':val<0?'text-danger-600':'text-foreground/60'
-                      return <span className={cls}>{Intl.NumberFormat('ru-RU').format(val)}</span>
+                      return <span className={cls}>{fmt(val)}</span>
                     }
-                    case 'price': return <span>{Intl.NumberFormat('ru-RU').format(Number(row.price||0))}</span>
-                    case 'cost_price': return <span>{Intl.NumberFormat('ru-RU').format(Number(row.cost_price||0))}</span>
+                    case 'price': return <span>{fmt(Number(row.price||0))}</span>
+                    case 'cost_price': return <span>{fmt(Number(row.cost_price||0))}</span>
                     default: return String(row[key] ?? '')
                   }
                 }}
@@ -356,12 +358,12 @@ function StatCard({ icon: Icon, title, value, unit }: { icon: any; title: string
   )
 }
 
-function StatMoney({ icon: Icon, title, value }: { icon: any; title: string; value: number }) {
+function StatMoney({ icon: Icon, title, value }: { icon: any; title: string; value: any }) {
   return (
     <div className="rounded-2xl bg-gray-900 border border-gray-700 p-5 flex items-center justify-between">
       <div>
         <div className="text-sm text-gray-200">{title}</div>
-        <div className="mt-2 text-2xl font-semibold tracking-wide"><span className="text-blue-500">{Intl.NumberFormat('ru-RU').format(Number(value||0))}</span> <span className="text-gray-300 text-base ml-1">UZS</span></div>
+        <div className="mt-2 text-2xl font-semibold tracking-wide"><span className="text-blue-500">{value}</span></div>
       </div>
       <div className="h-11 w-11 rounded-full bg-gray-800 flex items-center justify-center"><Icon className="h-6 w-6 text-blue-500" /></div>
     </div>

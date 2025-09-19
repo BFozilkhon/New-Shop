@@ -11,6 +11,8 @@ import { PhotoIcon } from '@heroicons/react/24/outline'
 import { usePreferences } from '../../store/prefs'
 import { useTranslation } from 'react-i18next'
 import { tenantsService } from '../../services/tenantsService'
+import { refreshExchangeRate } from '../../services/ratesService'
+import { useNavigate } from 'react-router-dom'
 
 const sections = [
   { key: 'general', labelKey: 'profile.sections.general' },
@@ -24,6 +26,7 @@ const sections = [
 export default function ProfilePage() {
   const { t } = useTranslation()
   const [activeKey, setActiveKey] = useState('general')
+  const navigate = useNavigate()
 
   // General form state
   const [name, setName] = useState('')
@@ -35,13 +38,15 @@ export default function ProfilePage() {
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   const { auth } = useAuth()
-  const { prefs, setServiceMode: setSvcModePref, setLanguage: setLangPref } = usePreferences()
+  const { prefs, setServiceMode: setSvcModePref, setLanguage: setLangPref, setCurrency, setExchangeRate } = usePreferences()
 
   // Preferences
   const [notifyEnabled, setNotifyEnabled] = useState<boolean>(() => localStorage.getItem('pref_notify') === '1')
   const [serviceMode, setServiceMode] = useState<boolean>(prefs.serviceMode)
   const [language, setLanguage] = useState<string>(prefs.language || 'EN')
   const [timezone, setTimezone] = useState<string>(() => localStorage.getItem('pref_timezone') || 'Asia/Tashkent')
+  const [currency, setCurrencyState] = useState<'UZS'|'USD'>(prefs.currency || 'UZS')
+  const [rate, setRate] = useState<number>(Number(prefs.exchangeRate || 12000))
 
   // keep track of created object URLs so we can revoke them
   const createdObjectUrlsRef = useRef<string[]>([])
@@ -71,6 +76,8 @@ export default function ProfilePage() {
   useEffect(() => { localStorage.setItem('pref_service_mode', serviceMode ? '1' : '0'); setSvcModePref(serviceMode) }, [serviceMode])
   useEffect(() => { localStorage.setItem('pref_language', language); setLangPref(language) }, [language])
   useEffect(() => { if (timezone) localStorage.setItem('pref_timezone', timezone) }, [timezone])
+  useEffect(() => { setCurrency(currency); localStorage.setItem('pref_currency', currency) }, [currency])
+  useEffect(() => { if (rate>0) { setExchangeRate(rate); localStorage.setItem('pref_rate', String(Math.round(rate))) } }, [rate])
 
   const [isSaving, setIsSaving] = useState(false)
 
@@ -82,7 +89,7 @@ export default function ProfilePage() {
       if (avatar && avatar.length > 0) payload.avatar = avatar[0]
       const updated = await usersService.update(auth.user.id, payload)
       // save tenant timezone
-      try { await tenantsService.updateCurrent({ settings: { timezone } }) } catch {}
+      try { await tenantsService.updateCurrent({ settings: { timezone, currency } }) } catch {}
       localStorage.setItem('user', JSON.stringify(updated))
       // sync prefs to localStorage for immediate effect
       localStorage.setItem('pref_service_mode', serviceMode ? '1' : '0')
@@ -130,6 +137,11 @@ export default function ProfilePage() {
     } catch (err) {
       // upload failed, keep preview but could show toast
     }
+  }
+
+  const handleFetchRate = async () => {
+    const r = await refreshExchangeRate()
+    setRate(r)
   }
 
   return (
@@ -210,6 +222,15 @@ export default function ProfilePage() {
                             <SelectItem key="America/Los_Angeles">USA – Pacific (America/Los_Angeles)</SelectItem>
                             <SelectItem key="UTC">UTC</SelectItem>
                           </Select>
+                        </div>
+                        <div className="col-span-2 grid grid-cols-2 gap-4">
+                          <Select label="Currency" selectedKeys={[currency]} onSelectionChange={(k)=> setCurrencyState((Array.from(k)[0] as 'UZS'|'USD')||'UZS')} variant="bordered" classNames={{ trigger:'h-14' }}>
+                            <SelectItem key="UZS">UZS</SelectItem>
+                            <SelectItem key="USD">USD</SelectItem>
+                          </Select>
+                          <div className="flex items-center gap-3">
+                            <Button variant="flat" onPress={()=> navigate('/settings/exchange-rates')}>Manage Exchange Rate History</Button>
+                          </div>
                         </div>
                       </div>
 

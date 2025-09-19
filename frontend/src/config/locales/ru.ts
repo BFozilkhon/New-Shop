@@ -23,6 +23,7 @@ const ru = {
     logout: 'Выйти',
     yes: 'Да',
     no: 'Нет',
+    id: 'ID',
   },
   profile: {
     breadcrumb: 'Главная / Настройки / Профиль',
@@ -435,7 +436,7 @@ const ru = {
     create_prefix: 'Списание',
     create_btn: 'Новое списание',
     status: { new: 'Новый', approved: 'Завершен', rejected: 'Отменен' },
-    list: { id:'ID', name:'Название', store:'Магазин', quantity:'Количество', total:'Итого', type:'Тип списания', user:'Пользователь', status:'Статус', creation:'Дата создания', completion:'Дата завершения', actions:'Действия' },
+    list: { id:'ID', name:'Название', store:'Магазин', quantity:'Количество', total:'Итого', type:'Тип списания', user:'Пользователь', created_by:'Создал', status:'Статус', creation:'Дата создания', completion:'Дата завершения', actions:'Действия' },
     create_modal: { title:'Новое списание', name:'Название списания', store:'Выберите магазин', from_file:'Списание из файла', reason:'Выберите причину списания' },
     confirm_delete_title: 'Удалить списание?',
     confirm_delete_desc: 'Удалить «{{name}}»? Это действие нельзя отменить.',

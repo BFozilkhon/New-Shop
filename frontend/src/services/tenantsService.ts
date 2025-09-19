@@ -4,6 +4,8 @@ export type TenantSettings = {
   language?: string
   timezone?: string
   currency?: string
+  exchange_rate?: number
+  rate_mode?: 'UZS_PER_USD' | 'USD_PER_UZS'
   date_format?: string
 }
 

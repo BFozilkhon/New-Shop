@@ -1,9 +1,10 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useEffect } from 'react'
 import { Button, Input, Select, SelectItem } from '@heroui/react'
 import CustomModal from '../../../components/common/CustomModal'
 import { repricingsService } from '../../../services/repricingsService'
 import { storesService } from '../../../services/storesService'
 import { useQuery } from '@tanstack/react-query'
+import { usePreferences } from '../../../store/prefs'
 
 function generateDefaultName() {
   const d = new Date()
@@ -19,6 +20,14 @@ export default function CreateRepricingModal({ isOpen, onOpenChange, onCreated }
   const [rtype, setRtype] = useState<'price_change'|'currency_change'|'delivery_price_change'>('price_change')
   const shopsQ = useQuery({ queryKey: ['stores','all'], queryFn: ()=> storesService.list({ page:1, limit:100 }), placeholderData: (p)=> p })
   const shopItems = useMemo(()=> (shopsQ.data?.items||[]).map((s:any)=> ({ key: s.id, label: s.title||s.name })), [shopsQ.data])
+  const { prefs } = usePreferences()
+
+  useEffect(()=>{
+    if (isOpen) {
+      if (prefs.selectedStoreId) setShopId(prev=> prev || (prefs.selectedStoreId as string))
+      else setShopId('')
+    }
+  }, [isOpen, prefs.selectedStoreId])
 
   const handle = async () => {
     const created = await repricingsService.create({ name, from_file: fromFile, shop_id: shopId, type: rtype })

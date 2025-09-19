@@ -97,6 +97,9 @@ export type Product = {
   bundle_price?: number
   bundle_items?: BundleItem[]
 
+  product_type?: 'PRODUCT'|'SET'|'SERVICE'
+  set_items?: { product_id: string; quantity: number }[]
+
   barcode: string
   expiration_date?: string
   is_dirty_core: boolean
@@ -138,6 +141,8 @@ export const productsService = {
     is_realizatsiya?: boolean
     is_konsignatsiya?: boolean
     is_dirty_core?: boolean
+    product_type?: 'PRODUCT'|'SET'|'SERVICE'
+    exclude_types?: ('PRODUCT'|'SET'|'SERVICE')[]
   }) =>
     apiClient.get<{ data: Paginated<Product> }>(`/api/products`, { params }).then(r => r.data.data),
   
@@ -174,6 +179,8 @@ export const productsService = {
     is_bundle: boolean
     bundle_price?: number
     bundle_items?: BundleItem[]
+    product_type?: 'PRODUCT'|'SET'|'SERVICE'
+    set_items?: { product_id: string; quantity: number }[]
     barcode: string
     expiration_date?: string
     is_dirty_core: boolean
@@ -216,6 +223,8 @@ export const productsService = {
     is_bundle: boolean
     bundle_price: number
     bundle_items: BundleItem[]
+    product_type: 'PRODUCT'|'SET'|'SERVICE'
+    set_items: { product_id: string; quantity: number }[]
     barcode: string
     expiration_date: string
     is_dirty_core: boolean

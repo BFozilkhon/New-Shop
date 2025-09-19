@@ -18,9 +18,10 @@ type InventoryService struct {
 	repo *repositories.InventoryRepository
 	stores *repositories.StoreRepository
 	productRepo *repositories.ProductRepository
+	importHistoryRepo *repositories.ImportHistoryRepository
 }
 
-func NewInventoryService(repo *repositories.InventoryRepository, stores *repositories.StoreRepository, productRepo *repositories.ProductRepository) *InventoryService { return &InventoryService{repo: repo, stores: stores, productRepo: productRepo} }
+func NewInventoryService(repo *repositories.InventoryRepository, stores *repositories.StoreRepository, productRepo *repositories.ProductRepository, importHistoryRepo *repositories.ImportHistoryRepository) *InventoryService { return &InventoryService{repo: repo, stores: stores, productRepo: productRepo, importHistoryRepo: importHistoryRepo} }
 
 func (s *InventoryService) List(ctx context.Context, f models.InventoryFilterRequest, tenantID string) ([]models.Inventory, int64, error) {
 	var fromPtr, toPtr *time.Time
@@ -128,6 +129,30 @@ func (s *InventoryService) Update(ctx context.Context, id string, body models.Up
 			if err != nil { continue }
 			// Set actual stock equal to scanned
 			_ = s.productRepo.UpdateStock(ctx, pid, tenantID, int(it.Scanned))
+		}
+		// Additionally, record surplus to import history
+		if s.importHistoryRepo != nil {
+			go func(items []models.InventoryItemInput) {
+				defer func(){ _ = recover() }()
+				if len(items) == 0 { return }
+				var storeName string
+				storeID := ""
+				if inv, err := s.repo.Get(ctx, oid, tenantID); err == nil && inv != nil {
+					storeID = inv.ShopID
+					storeName = inv.ShopName
+				}
+				svc := NewImportHistoryService(s.importHistoryRepo)
+				// build items with surplus only
+				ihItems := make([]models.ImportHistoryItemInput, 0)
+				for _, it := range items {
+					qty := int(it.Scanned - it.Declared)
+					if qty > 0 {
+						ihItems = append(ihItems, models.ImportHistoryItemInput{ ProductID: it.ProductID, ProductName: it.ProductName, ProductSKU: it.ProductSKU, Barcode: it.Barcode, Qty: qty, Unit: it.Unit })
+					}
+				}
+				if len(ihItems) == 0 { return }
+				_, _ = svc.Create(ctx, tenantID, user.ID, models.CreateImportHistoryRequest{ FileName: "Inventory surplus", StoreID: storeID, StoreName: storeName, TotalRows: len(ihItems), SuccessRows: len(ihItems), ErrorRows: 0, Status: "completed", ImportType: "INVENTORY_SURPLUS", Items: ihItems })
+			}(itemsToApply)
 		}
 	}
 	return m, nil

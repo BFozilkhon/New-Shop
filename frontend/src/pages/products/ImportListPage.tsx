@@ -1,14 +1,14 @@
 import { useMemo, useState, useEffect } from 'react'
 import CustomMainBody from '../../components/common/CustomMainBody'
 import CustomTable, { CustomColumn } from '../../components/common/CustomTable'
-import { Button, Dropdown, DropdownItem, DropdownMenu, DropdownTrigger } from '@heroui/react'
-import { EllipsisVerticalIcon, EyeIcon, TrashIcon } from '@heroicons/react/24/outline'
+import { Button } from '@heroui/react'
 import ImportCreateModal from './components/ImportCreateModal'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from 'react-toastify'
 import { productsImportService } from '../../services/productsImportService'
 import { useTranslation } from 'react-i18next'
 import { usePreferences } from '../../store/prefs'
+import { useNavigate } from 'react-router-dom'
 
 function parseCSV(csvText: string): string[][] {
   const lines = csvText.split('\n').filter(l => l.trim())
@@ -32,6 +32,7 @@ export default function ImportListPage() {
   const { t } = useTranslation()
   const qc = useQueryClient()
   const { prefs } = usePreferences()
+  const navigate = useNavigate()
   const [open, setOpen] = useState(false)
   const [history, setHistory] = useState<any[]>([])
   const [mappingCtx, setMappingCtx] = useState<{ headers: string[]; rows: string[][]; title: string } | null>(null)
@@ -51,48 +52,35 @@ export default function ImportListPage() {
 
   const items = useMemo(() => (history||[]).map((h:any, i:number) => ({
     id: h.id || i+1,
+    displayId: h.external_id || h.id,
     name: h.file_name || h.title || t('importPage.header'),
     store: h.store_name || t('importPage.form.store'),
     quantity: h.success_rows || 0,
     total: h.total_rows || 0,
     status: h.status || 'completed',
+    type: h.import_type || 'EXPORT',
     date: new Date(h.created_at || h.date).toLocaleString(),
-    created_by: 'System',
   })), [history, t])
 
   const columns: CustomColumn[] = useMemo(() => [
-    { uid: 'id', name: t('importPage.id') },
+    { uid: 'displayId', name: t('importPage.id') },
     { uid: 'name', name: t('importPage.name') },
     { uid: 'store', name: t('importPage.store') },
+    { uid: 'type', name: 'Type' },
     { uid: 'quantity', name: t('importPage.quantity') },
     { uid: 'total', name: t('importPage.total') },
     { uid: 'status', name: t('importPage.status') },
     { uid: 'date', name: t('importPage.date') },
-    { uid: 'actions', name: t('importPage.actions') },
   ], [t])
 
   const renderCell = (item:any, key:string) => {
-    switch (key) {
-      case 'actions':
-        return (
-          <Dropdown placement="bottom-end">
-            <DropdownTrigger>
-              <Button isIconOnly variant="light" size="sm" aria-label="actions">
-                <EllipsisVerticalIcon className="w-5 h-5" />
-              </Button>
-            </DropdownTrigger>
-            <DropdownMenu aria-label="Actions">
-              <DropdownItem key="view" startContent={<EyeIcon className="w-4 h-4" />}>{t('importPage.view')}</DropdownItem>
-              <DropdownItem key="delete" className="text-danger" color="danger" startContent={<TrashIcon className="w-4 h-4" />} onPress={async ()=>{
-                toast.info(t('importPage.del_toast'))
-              }}>{t('importPage.del')}</DropdownItem>
-            </DropdownMenu>
-          </Dropdown>
-        )
-      default:
-        return item[key]
+    if (key === 'name') {
+      return <button className="text-primary underline-offset-2 hover:underline" onClick={()=> navigate(`/products/import/${item.id}`)}>{item.name}</button>
     }
+    return item[key]
   }
+
+  const onRowClick = (it:any) => navigate(`/products/import/${it.id}`)
 
   const onProceed = async ({ title, storeId, fileName, csvText, ...entry }: any) => {
     // parse and go to mapping step
@@ -108,7 +96,7 @@ export default function ImportListPage() {
     // If entry summary exists, treat as finished import from modal
     if (entry && entry.totalRows !== undefined) {
       try {
-        await productsImportService.create({ file_name: entry.file_name || fileName || title, store_id: storeId, store_name: entry.storeName, total_rows: entry.totalRows, success_rows: entry.successRows, error_rows: entry.errorRows, status: entry.status || 'completed' })
+        await productsImportService.create({ file_name: entry.file_name || fileName || title, store_id: storeId, store_name: entry.storeName, total_rows: entry.totalRows, success_rows: entry.successRows, error_rows: entry.errorRows, status: entry.status || 'completed', import_type: 'EXPORT', items: [] })
         await loadHistory()
         toast.success(t('importPage.toast.completed'))
         setOpen(false)

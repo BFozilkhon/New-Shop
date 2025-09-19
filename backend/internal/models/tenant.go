@@ -43,6 +43,8 @@ type TenantSettings struct {
 	Language      string               `bson:"language" json:"language"`
 	Timezone      string               `bson:"timezone" json:"timezone"`
 	Currency      string               `bson:"currency" json:"currency"`
+	ExchangeRate  float64              `bson:"exchange_rate" json:"exchange_rate"`
+	RateMode      string               `bson:"rate_mode" json:"rate_mode"` // UZS_PER_USD | USD_PER_UZS
 	DateFormat    string               `bson:"date_format" json:"date_format"`
 	Logo          string               `bson:"logo" json:"logo"`
 	BrandColors   BrandColors          `bson:"brand_colors" json:"brand_colors"`
@@ -100,6 +102,8 @@ func GetDefaultTenantSettings() TenantSettings {
 		Language:   "ru",
 		Timezone:   "UTC+5",
 		Currency:   "UZS",
+		ExchangeRate: 12000,
+		RateMode:   "UZS_PER_USD",
 		DateFormat: "DD.MM.YYYY",
 		BrandColors: BrandColors{ Primary: "#3b82f6", Secondary: "#10b981", Accent: "#f59e0b" },
 		Features: []string{"products","customers","sales","reports"},

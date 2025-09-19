@@ -14,6 +14,7 @@ type Props = {
   onChange: (files: string[]) => void
   isReadOnly?: boolean
   className?: string
+  compact?: boolean
 }
 
 export default function CustomDocumentUpload({
@@ -26,6 +27,7 @@ export default function CustomDocumentUpload({
   onChange,
   isReadOnly = false,
   className = 'w-full',
+  compact = false,
 }: Props) {
   const [isDragging, setIsDragging] = useState(false)
   const [uploading, setUploading] = useState(false)
@@ -120,7 +122,7 @@ export default function CustomDocumentUpload({
     if (!raw) return raw
     const u = raw.trim()
     // Fix protocol-relative
-    if (u.startsWith('//uploads/')) return u.replace(/^\/\//, '/') // -> '/uploads/...'
+    if (u.startsWith('//uploads/')) return u.replace(/^\/{2}/, '/') // -> '/uploads/...'
     // Fix explicit wrong host 'uploads'
     const m = u.match(/^https?:\/\/uploads\/(.*)$/i)
     if (m) {
@@ -138,38 +140,49 @@ export default function CustomDocumentUpload({
   return (
     <div className={className}>
       {label && <label className="block text-sm font-medium mb-2">{label}</label>}
-      {/* URL add row */}
-      <div className="flex items-center gap-2 mb-3">
-        <Input placeholder="https://...image.jpg" value={url} onValueChange={setUrl} variant="bordered" classNames={{ inputWrapper:'h-12' }} isReadOnly={isReadOnly} />
-        <Button color="primary" variant="flat" className="h-12 px-6 min-w-[96px]" onPress={handleAddUrl} isDisabled={isReadOnly || !url.trim()}>Add</Button>
-      </div>
-      <div
-        className={`w-full border rounded-lg bg-background ${isDragging ? 'ring-2 ring-primary/40' : 'shadow-sm'}`}
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
-        onDrop={handleDrop}
-      >
-        <div className="flex flex-col md:flex-row items-center p-6 space-y-4 md:space-y-0 md:space-x-6">
-          <div className="flex-shrink-0">
-            <CloudArrowUpIcon className="w-12 h-12 text-default-400" />
-          </div>
-
-          <div className="flex-1 text-center md:text-left">
-            <p className="text-lg font-semibold mb-1">{uploading ? 'Uploading...' : 'Click to upload or drag and drop'}</p>
-            <p className="text-sm text-default-500">{accept === 'image/*' ? 'Images' : 'Files'} up to {maxSize}MB each{multiple ? ` (max ${maxFiles} files)` : ''}</p>
-          </div>
-
-          <div className="flex-shrink-0">
-            <button
-              type="button"
-              onClick={openFileDialog}
-              className="inline-flex items-center justify-center px-4 py-2 rounded-md bg-primary text-white hover:opacity-95"
-            >
-              Choose Files
-            </button>
-          </div>
+      {/* Compact mode */}
+      {compact ? (
+        <div className="flex items-center gap-2 mb-3">
+          <Input placeholder="https://...image.jpg" value={url} onValueChange={setUrl} variant="bordered" classNames={{ inputWrapper:'h-10' }} isReadOnly={isReadOnly} />
+          <Button color="primary" variant="flat" className="h-10 px-4" onPress={handleAddUrl} isDisabled={isReadOnly || !url.trim()}>Add</Button>
+          <Button variant="flat" className="h-10 px-4" onPress={openFileDialog} isDisabled={isReadOnly || uploading}>{uploading ? 'Uploading...' : 'Upload'}</Button>
         </div>
-      </div>
+      ) : (
+        <>
+          {/* URL add row */}
+          <div className="flex items-center gap-2 mb-3">
+            <Input placeholder="https://...image.jpg" value={url} onValueChange={setUrl} variant="bordered" classNames={{ inputWrapper:'h-12' }} isReadOnly={isReadOnly} />
+            <Button color="primary" variant="flat" className="h-12 px-6 min-w-[96px]" onPress={handleAddUrl} isDisabled={isReadOnly || !url.trim()}>Add</Button>
+          </div>
+          <div
+            className={`w-full border rounded-lg bg-background ${isDragging ? 'ring-2 ring-primary/40' : 'shadow-sm'}`}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+          >
+            <div className="flex flex-col md:flex-row items-center p-6 space-y-4 md:space-y-0 md:space-x-6">
+              <div className="flex-shrink-0">
+                <CloudArrowUpIcon className="w-12 h-12 text-default-400" />
+              </div>
+
+              <div className="flex-1 text-center md:text-left">
+                <p className="text-lg font-semibold mb-1">{uploading ? 'Uploading...' : 'Click to upload or drag and drop'}</p>
+                <p className="text-sm text-default-500">{accept === 'image/*' ? 'Images' : 'Files'} up to {maxSize}MB each{multiple ? ` (max ${maxFiles} files)` : ''}</p>
+              </div>
+
+              <div className="flex-shrink-0">
+                <button
+                  type="button"
+                  onClick={openFileDialog}
+                  className="inline-flex items-center justify-center px-4 py-2 rounded-md bg-primary text-white hover:opacity-95"
+                >
+                  Choose Files
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
 
       <input
         ref={fileInputRef}
@@ -181,17 +194,17 @@ export default function CustomDocumentUpload({
       />
 
       {value.length > 0 && (
-        <div className="mt-4">
-          <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-2 items-start">
+        <div className="mt-3">
+          <div className="flex gap-6">
             {value.map((raw, index) => {
               const normalized = normalizeUploadUrl(raw)
               return (
                 <div key={index} className="relative inline-flex items-start group">
-                  <div className="w-28 h-28 bg-default-100 rounded-md overflow-hidden flex items-center justify-center">
+                  <div className="w-20 h-20 md:w-24 md:h-24 bg-default-100 rounded-md overflow-hidden flex items-center justify-center">
                     {isImage(normalized) ? (
                       <img src={normalized} alt={`upload-${index}`} className="w-full h-full object-cover" onError={(e)=>{(e.target as HTMLImageElement).src='/assets/images/logo.jpg'}} />
                     ) : (
-                      <DocumentIcon className="w-8 h-8 text-default-400" />
+                      <DocumentIcon className="w-7 h-7 text-default-400" />
                     )}
                   </div>
 

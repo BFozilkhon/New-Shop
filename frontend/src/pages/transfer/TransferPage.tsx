@@ -7,6 +7,8 @@ import CustomTable, { CustomColumn } from '../../components/common/CustomTable'
 import { transfersService } from '../../services/transfersService'
 import CreateTransferModal from './components/CreateTransferModal'
 import { useTranslation } from 'react-i18next'
+import useCurrency from '../../hooks/useCurrency'
+import MoneyAt from '../../components/common/MoneyAt'
 
 export default function TransferPage() {
   const navigate = useNavigate()
@@ -15,6 +17,7 @@ export default function TransferPage() {
   const [limit, setLimit] = useState(20)
   const [search, setSearch] = useState('')
   const [open, setOpen] = useState(false)
+  const { format: fmt } = useCurrency()
 
   const { data } = useQuery({ queryKey: ['transfers', page, limit, search], queryFn: ()=> transfersService.list({ page, limit, search }), placeholderData: (p)=> p })
   const rows = useMemo(()=> (data?.items||[]), [data])
@@ -38,7 +41,7 @@ export default function TransferPage() {
       case 'name': return <button className="text-primary underline-offset-2 hover:underline" onClick={()=> navigate(`/products/transfer/${row.id}`)}>{row.name}</button>
       case 'status': return <Chip color={row.status==='APPROVED'?'success':row.status==='REJECTED'?'danger':'default'} size="sm" variant="flat">{row.status}</Chip>
       case 'created_by': return row.created_by?.name || '-'
-      case 'total_price': return `${Intl.NumberFormat('ru-RU').format(row.total_price||0)} UZS`
+      case 'total_price': return <MoneyAt amount={Number(row.total_price||0)} date={row.created_at} />
       default: return row[key]
     }
   }

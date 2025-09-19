@@ -75,6 +75,7 @@ func (s *WriteOffService) Update(ctx context.Context, id string, body models.Upd
 		items := make([]models.WriteOffItem, 0, len(body.Items))
 		var totalQty, totalSupply, totalRetail float64
 		for _, it := range body.Items {
+			if it.Qty <= 0 { continue }
 			pid, err := primitive.ObjectIDFromHex(it.ProductID); if err != nil { return nil, utils.BadRequest("INVALID_PRODUCT_ID", "Invalid product id in items", err) }
 			// validate against current stock (fallback without tenant if needed)
 			p, err := s.product.Get(ctx, pid, tenantID)
@@ -82,7 +83,8 @@ func (s *WriteOffService) Update(ctx context.Context, id string, body models.Upd
 				if p2, e2 := s.product.GetByID(ctx, pid); e2 == nil { p = p2 } else { return nil, utils.BadRequest("PRODUCT_NOT_FOUND", "Product not found for write-off", err) }
 			}
 			if int(it.Qty) > p.Stock { return nil, utils.BadRequest("WRITEOFF_QTY_EXCEEDS_STOCK", "Write-off quantity exceeds current stock", nil) }
-			items = append(items, models.WriteOffItem{ ProductID: pid, ProductName: it.ProductName, ProductSKU: it.ProductSKU, Barcode: it.Barcode, Qty: it.Qty, Unit: it.Unit, SupplyPrice: it.SupplyPrice, RetailPrice: it.RetailPrice })
+			unit := it.Unit; if unit == "" { unit = "pcs" }
+			items = append(items, models.WriteOffItem{ ProductID: pid, ProductName: it.ProductName, ProductSKU: it.ProductSKU, Barcode: it.Barcode, Qty: it.Qty, Unit: unit, SupplyPrice: it.SupplyPrice, RetailPrice: it.RetailPrice })
 			totalQty += it.Qty
 			totalSupply += it.Qty * it.SupplyPrice
 			totalRetail += it.Qty * it.RetailPrice
@@ -101,6 +103,7 @@ func (s *WriteOffService) Update(ctx context.Context, id string, body models.Upd
 		if body.Action == "approve" && cur.Status == "NEW" {
 			// decrement stock per item
 			for _, it := range cur.Items {
+				if it.Qty <= 0 { continue }
 				p, err := s.product.Get(ctx, it.ProductID, tenantID)
 				if err != nil { if p2, e2 := s.product.GetByID(ctx, it.ProductID); e2 == nil { p = p2 } else { return nil, utils.BadRequest("PRODUCT_NOT_FOUND", "Product not found for write-off", err) } }
 				if int(it.Qty) > p.Stock { return nil, utils.BadRequest("WRITEOFF_QTY_EXCEEDS_STOCK", "Write-off quantity exceeds current stock", nil) }

@@ -22,6 +22,7 @@ import ProductsPage from '../pages/products/ProductsPage'
 import ProductCreatePage from '../pages/products/ProductCreatePage'
 import ProductEditPage from '../pages/products/ProductEditPage'
 import ImportListPage from '../pages/products/ImportListPage'
+import ImportDetailPage from '../pages/products/ImportDetailPage'
 import CustomersPage from '../pages/customers/CustomersPage'
 import CustomerCreatePage from '../pages/customers/CustomerCreatePage'
 import CustomerEditPage from '../pages/customers/CustomerEditPage'
@@ -55,6 +56,7 @@ import TransferDetailPage from '../pages/transfer/TransferDetailPage'
 import PriceTagsPage from '../pages/settings/PriceTagsPage'
 import PriceTagEditPage from '../pages/settings/PriceTagEditPage'
 import ProductsArchivePage from '../pages/products/ProductsArchivePage'
+import ExchangeRatesPage from '../pages/settings/ExchangeRatesPage'
 
 function Protected({ children }: { children: JSX.Element }) {
   const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null
@@ -84,6 +86,7 @@ const router = createBrowserRouter([
       { path: 'products/orders/:id', element: <OrderDetailPage /> },
       { path: 'products/order-returns/:id', element: <OrderReturnsDetailPage /> },
       { path: 'products/import', element: <ImportListPage /> },
+      { path: 'products/import/:id', element: <ImportDetailPage /> },
       { path: 'products/inventory', element: <InventoryPage /> },
       { path: 'products/inventory/:id', element: <InventoryDetailPage /> },
       { path: 'products/writeoff', element: <WriteOffPage /> },
@@ -123,6 +126,7 @@ const router = createBrowserRouter([
       { path: 'settings/pricetags', element: <PriceTagsPage /> },
       { path: 'settings/pricetags/create', element: <PriceTagEditPage /> },
       { path: 'settings/pricetags/:id/edit', element: <PriceTagEditPage /> },
+      { path: 'settings/exchange-rates', element: <ExchangeRatesPage /> },
       { path: 'crm/leads', element: <LeadsPage /> },
       { path: 'shop/service', element: <WithServiceMode><ShopServicePage /></WithServiceMode> },
       { path: 'shop/service/create', element: <WithServiceMode><ShopServiceCreatePage /></WithServiceMode> },

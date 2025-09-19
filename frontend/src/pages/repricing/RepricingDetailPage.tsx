@@ -10,12 +10,14 @@ import { BanknotesIcon, CubeIcon, ArrowLeftIcon } from '@heroicons/react/24/outl
 import ConfirmModal from '../../components/common/ConfirmModal'
 import { useTranslation } from 'react-i18next'
 import { Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Select, SelectItem } from '@heroui/react'
+import useCurrency from '../../hooks/useCurrency'
 
 export default function RepricingDetailPage() {
   const navigate = useNavigate()
   const { id } = useParams<{ id: string }>()
   const qc = useQueryClient()
   const { t } = useTranslation()
+  const { format: fmt } = useCurrency()
 
   const { data: doc } = useQuery({ queryKey: ['repricing', id], queryFn: ()=> repricingsService.get(id!), enabled: !!id })
 
@@ -121,11 +123,11 @@ export default function RepricingDetailPage() {
       case 'supply_price':
         return canEditSupply ? (
           <Input key={`sp-${row.product_id}`} type="number" value={String(row.supply_price??0)} onValueChange={(v)=> updateRow(row.product_id, 'supply_price', Number(v||0))} classNames={{ inputWrapper:'h-9' }} />
-        ) : <span>{Intl.NumberFormat('ru-RU').format(row.supply_price||0)}</span>
+        ) : <span>{fmt(Number(row.supply_price||0))}</span>
       case 'retail_price':
         return canEditRetail ? (
           <Input key={`rp-${row.product_id}`} type="number" value={String(row.retail_price??0)} onValueChange={(v)=> updateRow(row.product_id, 'retail_price', Number(v||0))} classNames={{ inputWrapper:'h-9' }} />
-        ) : <span>{Intl.NumberFormat('ru-RU').format(row.retail_price||0)}</span>
+        ) : <span>{fmt(Number(row.retail_price||0))}</span>
       default:
         return row[key]
     }
@@ -188,7 +190,7 @@ export default function RepricingDetailPage() {
           <div className="rounded-2xl bg-gray-900 border border-gray-700 p-5 flex items-center justify-between">
             <div>
               <div className="text-xs text-gray-200">{t('repricing.detail.amount_supply','Supplier amount')}</div>
-              <div className="mt-1 text-2xl font-semibold tracking-wide"><span className="text-blue-500">{Intl.NumberFormat('ru-RU').format(relevantSupply)}</span> <span className="text-gray-300 text-base ml-1">UZS</span></div>
+              <div className="mt-1 text-2xl font-semibold tracking-wide"><span className="text-blue-500">{fmt(relevantSupply)}</span></div>
             </div>
             <div className="h-11 w-11 rounded-full bg-gray-800 flex items-center justify-center"><BanknotesIcon className="h-6 w-6 text-blue-500" /></div>
           </div>
@@ -196,7 +198,7 @@ export default function RepricingDetailPage() {
           <div className="rounded-2xl bg-gray-900 border border-gray-700 p-5 flex items-center justify-between">
             <div>
               <div className="text-xs text-gray-200">{t('repricing.detail.amount_retail','Retail amount')}</div>
-              <div className="mt-1 text-2xl font-semibold tracking-wide"><span className="text-blue-500">{Intl.NumberFormat('ru-RU').format(relevantRetail)}</span> <span className="text-gray-300 text-base ml-1">UZS</span></div>
+              <div className="mt-1 text-2xl font-semibold tracking-wide"><span className="text-blue-500">{fmt(relevantRetail)}</span></div>
             </div>
             <div className="h-11 w-11 rounded-full bg-gray-800 flex items-center justify-center"><BanknotesIcon className="h-6 w-6 text-blue-500" /></div>
           </div>

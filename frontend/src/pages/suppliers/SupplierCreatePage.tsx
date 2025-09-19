@@ -12,7 +12,7 @@ const sections = [
   { key: 'bank', labelKey: 'suppliers.form.bank' },
 ]
 
-export default function SupplierCreatePage() {
+export default function SupplierCreatePage({ embedded = false, onClose, onCreated }: { embedded?: boolean; onClose?: ()=>void; onCreated?: (supplier:{id:string; name:string})=>void } = {}) {
   const { t } = useTranslation()
   const [active, setActive] = useState('basic')
   const containerRef = useRef<HTMLDivElement>(null)
@@ -72,9 +72,10 @@ export default function SupplierCreatePage() {
       }
       return suppliersService.create(payload as any)
     },
-    onSuccess: () => {
+    onSuccess: (created:any) => {
       qc.invalidateQueries({ queryKey: ['suppliers'] })
-      window.location.href = '/products/suppliers'
+      if (onCreated) onCreated({ id: created.id, name: created.name })
+      if (embedded) { onClose && onClose() } else { window.location.href = '/products/suppliers' }
     },
   } as any)
 
@@ -82,7 +83,7 @@ export default function SupplierCreatePage() {
     <CustomMainBody>
       <div className="flex items-center justify-between mb-4">
         <h1 className="text-xl font-semibold">{t('suppliers.create')}</h1>
-        <Button color="primary" startContent={<ArrowLeftIcon className="w-4 h-4" />} onPress={() => window.history.back()}>{t('suppliers.form.back')}</Button>
+        {!embedded && (<Button color="primary" startContent={<ArrowLeftIcon className="w-4 h-4" />} onPress={() => window.history.back()}>{t('suppliers.form.back')}</Button>)}
       </div>
       <div className="grid grid-cols-[220px_1fr] gap-6">
         <aside className="sticky top-4 self-start rounded-lg border border-default-200 p-2 h-fit">
@@ -134,7 +135,7 @@ export default function SupplierCreatePage() {
           </div>
 
           <div className="sticky bottom-0 mt-4 flex justify-end gap-2">
-            <Button variant="flat" onPress={() => window.history.back()}>{t('suppliers.form.back')}</Button>
+            <Button variant="flat" onPress={() => { if (embedded) { onClose && onClose() } else { window.history.back() } }}>{t('suppliers.form.back')}</Button>
             <Button color="primary" onPress={() => createMutation.mutate()}>{t('suppliers.form.save')}</Button>
           </div>
         </div>

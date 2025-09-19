@@ -35,6 +35,9 @@ type ProductListParams struct {
     IsRealizatsiya *bool
     IsKonsignatsiya *bool
     IsDirtyCore *bool
+
+    ProductType string
+    ExcludeTypes []string
 }
 
 type ProductRepository struct {
@@ -106,6 +109,10 @@ func (r *ProductRepository) List(ctx context.Context, p ProductListParams) ([]mo
 	if p.IsRealizatsiya != nil { and = append(and, bson.M{"is_realizatsiya": *p.IsRealizatsiya}) }
 	if p.IsKonsignatsiya != nil { and = append(and, bson.M{"is_konsignatsiya": *p.IsKonsignatsiya}) }
 	if p.IsDirtyCore != nil { and = append(and, bson.M{"is_dirty_core": *p.IsDirtyCore}) }
+	
+	// Product type filters
+	if p.ProductType != "" { and = append(and, bson.M{"product_type": p.ProductType}) }
+	if len(p.ExcludeTypes) > 0 { and = append(and, bson.M{"product_type": bson.M{"$nin": p.ExcludeTypes}}) }
 	
 	// Price range filter
 	if p.MinPrice != nil || p.MaxPrice != nil {
@@ -193,6 +200,9 @@ func (r *ProductRepository) Create(ctx context.Context, m *models.Product) (*mod
 	}
 	if m.Type == "" {
 		m.Type = models.ProductTypeSingle
+	}
+	if m.ProductType == "" {
+		m.ProductType = models.ProductKindProduct
 	}
 	if m.Images == nil {
 		m.Images = []string{}

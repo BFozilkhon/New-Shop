@@ -15,6 +15,7 @@ import ProductBulkActions from './components/ProductBulkActions'
 import Lightbox from 'yet-another-react-lightbox'
 import 'yet-another-react-lightbox/styles.css'
 import { toast } from 'react-toastify'
+import useCurrency from '../../hooks/useCurrency'
 
 function BulkActions({ disabled, onOpen }: { disabled: boolean; onOpen: () => void }) {
   if (disabled) {
@@ -48,6 +49,7 @@ export default function ProductsPage() {
   const { prefs } = usePreferences()
   const [showStats, setShowStats] = useState(true)
   const { format } = useDateFormatter()
+  const { format: fmt } = useCurrency()
 
   const status = sp.get('status') || 'all'
   const lowStock = sp.get('low_stock') === '1'
@@ -94,6 +96,7 @@ export default function ProductsPage() {
       name: p.name,
       sku: p.sku,
       barcode: p.barcode,
+      kind: p.product_type || 'PRODUCT',
       category_name: categories && categories.length ? categories.join(', ') : '-',
       supplier_name: p.supplier_name || '-',
       brand_name: p.brand_name || '-',
@@ -116,6 +119,7 @@ export default function ProductsPage() {
     { uid: 'name', name: t('products.columns.name'), sortable: true, className: 'min-w-[140px] w-[140px]' },
     { uid: 'sku', name: t('products.columns.sku'), sortable: true, className: 'min-w-[140px] w-[140px]' },
     { uid: 'barcode', name: t('repricing.detail.table.barcode','Barcode') },
+    { uid: 'kind', name: 'Kind' },
     { uid: 'category_name', name: t('products.columns.category'), className: 'min-w-[220px]' },
     { uid: 'supplier_name', name: 'Suppliers', className: 'min-w-[200px]' },
     { uid: 'stock', name: t('products.columns.stock'), sortable: true },
@@ -136,7 +140,7 @@ export default function ProductsPage() {
     { key: 'zero', label: 'Zero stock', count: statsQ.data?.zero },
     { key: 'realizatsiya', label: 'Realizatsiya' },
     { key: 'konsignatsiya', label: 'Konsignatsiya' },
-    { key: 'dirty', label: 'Dirty core' },
+    { key: 'dirty', label: 'Core' },
   ],[statsQ.data])
 
   const onTabChange = (key: string) => {
@@ -198,9 +202,9 @@ export default function ProductsPage() {
         )
       }
       case 'cost_price':
-        return `${nfUZS.format(Number(item.cost_price||0))} UZS`
+        return fmt(Number(item.cost_price||0))
       case 'price':
-        return `${nfUZS.format(Number(item.price||0))} UZS`
+        return fmt(Number(item.price||0))
       case 'stock':
         return (
           <Chip className="capitalize" color={item.stock > 0 ? 'success' : item.stock === 0 ? 'warning' : 'danger'} size="sm" variant="flat">{item.stock}</Chip>
@@ -299,14 +303,14 @@ export default function ProductsPage() {
             <div className="rounded-2xl bg-gray-900 border border-gray-700 p-5 flex items-center justify-between">
               <div>
                 <div className="text-sm text-gray-200">Amount at the supply price</div>
-                <div className="mt-2 text-2xl font-semibold tracking-wide"><span className="text-blue-500">{nfUZS.format(Number(summaryQ.data?.supply || 0))}</span> <span className="text-gray-300 text-base ml-1">UZS</span></div>
+                <div className="mt-2 text-2xl font-semibold tracking-wide"><span className="text-blue-500">{fmt(Number(summaryQ.data?.supply || 0))}</span></div>
               </div>
               <div className="h-11 w-11 rounded-full bg-gray-800 grid place-items-center"><BanknotesIcon className="h-6 w-6 text-blue-500" /></div>
             </div>
             <div className="rounded-2xl bg-gray-900 border border-gray-700 p-5 flex items-center justify-between">
               <div>
                 <div className="text-sm text-gray-200">Amount at the retail price</div>
-                <div className="mt-2 text-2xl font-semibold tracking-wide"><span className="text-blue-500">{nfUZS.format(Number(summaryQ.data?.retail || 0))}</span> <span className="text-gray-300 text-base ml-1">UZS</span></div>
+                <div className="mt-2 text-2xl font-semibold tracking-wide"><span className="text-blue-500">{fmt(Number(summaryQ.data?.retail || 0))}</span></div>
               </div>
               <div className="h-11 w-11 rounded-full bg-gray-800 grid place-items-center"><CurrencyDollarIcon className="h-6 w-6 text-blue-500" /></div>
             </div>

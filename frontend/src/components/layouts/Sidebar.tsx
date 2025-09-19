@@ -226,5 +226,6 @@ function mapChildToPermBase(sectionKey: string, childKey: string) {
   }
   if (sectionKey === 'settings' && childKey === 'company') return 'settings.company'
   if (sectionKey === 'settings' && childKey === 'stores') return 'settings.stores'
+  if (sectionKey === 'settings' && (childKey === 'exchange-rates' || childKey === 'exchange_rates')) return 'settings.exchange_rates'
   return `${sectionKey}.${childKey}`
 }

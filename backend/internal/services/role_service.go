@@ -150,6 +150,7 @@ func (s *RoleService) Permissions(ctx context.Context) ([]models.PermissionGroup
 			{Key: "settings.products", Name: "Products"},
 			{Key: "settings.notifications", Name: "Notifications"},
 			{Key: "settings.pricetags", Name: "Price Tags"},
+			{Key: "settings.exchange_rates", Name: "Exchange rate history"},
 		}},
 	}
 	return groups, nil

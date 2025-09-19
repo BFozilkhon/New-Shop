@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import CustomMainBody from '../../components/common/CustomMainBody'
-import { Button, Input, Select, SelectItem, Textarea, Switch, DatePicker, RadioGroup, Radio } from '@heroui/react'
+import { Button, Input, Select, SelectItem, Textarea, Switch, DatePicker, Button as NButton } from '@heroui/react'
 import CustomSelect from '../../components/common/CustomSelect'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { attributesService } from '../../services/attributesService'
@@ -19,6 +19,9 @@ import VariantsBuilder from './components/VariantsBuilder'
 // no custom modal needed
 import CharacteristicModal from '../catalog/components/CharacteristicModal'
 import BrandModal from '../catalog/components/BrandModal'
+import CreateSupplierModal from '../suppliers/components/CreateSupplierModal'
+import { usePreferences } from '../../store/prefs'
+import SetAddProductsModal, { type SetSelectionItem } from './components/SetAddProductsModal'
 
 const sections = [
   { key: 'main', labelKey: 'products.form.main' },
@@ -53,6 +56,7 @@ export default function ProductCreatePage({ embedded = false, onClose }: { embed
   const containerRef = useRef<HTMLDivElement>(null)
   const navigate = useNavigate()
   const qc = useQueryClient()
+  const { prefs } = usePreferences()
 
   // Main Information
   const [name, setName] = useState('')
@@ -66,7 +70,6 @@ export default function ProductCreatePage({ embedded = false, onClose }: { embed
   const [storeId, setStoreId] = useState<string>('')
   const [barcode, setBarcode] = useState('')
   const [unit, setUnit] = useState('')
-  const [weight, setWeight] = useState(0)
 
   const [dimensions, setDimensions] = useState<ProductDimensions>({ length: 0, width: 0, height: 0, unit: 'cm' })
   const [price, setPrice] = useState(0)
@@ -76,8 +79,6 @@ export default function ProductCreatePage({ embedded = false, onClose }: { embed
   const [minStock, setMinStock] = useState(0)
   const [maxStock, setMaxStock] = useState(0)
 
-  const [selectedCatalogAttribute, setSelectedCatalogAttribute] = useState<string>('')
-  const [selectedCatalogCharacteristic, setSelectedCatalogCharacteristic] = useState<string>('')
   const [status, setStatus] = useState('active')
   const [isPublished, setIsPublished] = useState(false)
   const [isActive, setIsActive] = useState(true)
@@ -89,11 +90,15 @@ export default function ProductCreatePage({ embedded = false, onClose }: { embed
   const [mode, setMode] = useState<'basic'|'variative'>('basic')
   const [variants, setVariants] = useState<any[]>([])
   const [variantExtras, setVariantExtras] = useState<any[]>([])
+  const [kind, setKind] = useState<'PRODUCT'|'SERVICE'|'SET'>('PRODUCT')
+  const [setItems, setSetItems] = useState<{ product_id:string; qty:number }[]>([])
 
   const [images, setImages] = useState<string[]>([])
   const [brandModalOpen, setBrandModalOpen] = useState(false)
   const [brandPrefill, setBrandPrefill] = useState('')
   const [brandSelectKey, setBrandSelectKey] = useState(0)
+  const [supplierDrawerOpen, setSupplierDrawerOpen] = useState(false)
+  const [supplierJustCreatedName, setSupplierJustCreatedName] = useState('')
 
   // Catalog characteristics values keyed by id
   const [charValues, setCharValues] = useState<Record<string, string>>({})
@@ -103,28 +108,50 @@ export default function ProductCreatePage({ embedded = false, onClose }: { embed
   const [editCharNewValue, setEditCharNewValue] = useState('')
   const [charSelectKeys, setCharSelectKeys] = useState<Record<string, number>>({})
 
+  const [setModalOpen, setSetModalOpen] = useState(false)
+  const [setSelected, setSetSelected] = useState<SetSelectionItem[]>([])
+
   const brandsQuery = useQuery({ queryKey: ['brands', 1, 100, ''], queryFn: () => brandsService.list({ page: 1, limit: 100 }), placeholderData: (prev) => prev })
   const suppliersQuery = useQuery({ queryKey: ['suppliers', 1, 100, ''], queryFn: () => suppliersService.list({ page: 1, limit: 100 }), placeholderData: (prev) => prev })
   const storesQuery = useQuery({ queryKey: ['stores',1,200,'', ''], queryFn: ()=> storesService.list({ page:1, limit:200, company_id: undefined }), placeholderData:(p)=>p })
   const catalogAttributesQuery = useQuery({ queryKey: ['catalog-attributes', 1, 100, ''], queryFn: () => attributesService.list({ page: 1, limit: 100 }), placeholderData: (prev) => prev })
   const catalogCharacteristicsQuery = useQuery({ queryKey: ['catalog-characteristics', 1, 100, ''], queryFn: () => characteristicsService.list({ page: 1, limit: 100 }), placeholderData: (prev) => prev })
 
+  // Prefill and keep in sync with Topbar store; clear when All stores
+  useEffect(() => {
+    setStoreId(prefs.selectedStoreId || '')
+  }, [prefs.selectedStoreId])
+
+  // recompute aggregate supply price for SET
+  useEffect(()=>{
+    if (kind !== 'SET') return
+    const total = (setSelected||[]).reduce((s, it)=> s + Number(it.cost_price||0) * Number(it.qty||0), 0)
+    setCostPrice(Math.round(total))
+  }, [kind, setSelected])
+
+  // force basic mode when not PRODUCT
+  useEffect(()=>{ if (kind !== 'PRODUCT') setMode('basic') }, [kind])
+
   const createMutation = useMutation({
     mutationFn: async () => {
       if (mode==='variative') {
+        if (kind !== 'PRODUCT') throw new Error('SET/SERVICE cannot be variative')
         if (!name || !sku) throw new Error('Please fill Name and SKU')
+        if (!storeId) throw new Error('Store is required')
         if (!variantExtras || variantExtras.length===0) throw new Error('Add at least one variant with Barcode, Supply and Retail price')
         const invalid = (variantExtras as any[]).some((v:any)=> !v.barcode || Number(v.cost_price||0)<=0 || Number(v.price||0)<=0)
         if (invalid) throw new Error('Each variant must have Barcode, Supply price and Retail price')
         const payload:any = {
           name, sku, description, unit, brand_id: brandId||undefined, supplier_id: supplierId||undefined, category_id: categoryId||undefined, category_ids: (categoryIds&&categoryIds.length?categoryIds:undefined), store_id: storeId||undefined,
-          variants: (variantExtras||[]).map((v:any)=> ({ name_suffix: v.name, barcode: v.barcode, images: v.images||[], cost_price: Number(v.cost_price||0), price: Number(v.price||0) }))
+          variants: (variantExtras||[]).map((v:any)=> ({ name_suffix: v.name, barcode: v.barcode, images: v.images||[], cost_price: Number(v.cost_price||0), price: Number(v.price||0) })),
+          product_type: kind,
         }
         const created:any = await productsService.bulkCreateVariants(payload)
         return created
       }
-      if (!name || !sku || !barcode || price <= 0) throw new Error('Please fill in all required fields')
-      const payload = {
+      if (!name || !sku || (kind==='PRODUCT' && (!barcode || price <= 0))) throw new Error('Please fill in all required fields')
+      if (!storeId) throw new Error('Store is required')
+      const payload:any = {
         name,
         sku,
         part_number: partNumber,
@@ -135,7 +162,6 @@ export default function ProductCreatePage({ embedded = false, onClose }: { embed
         min_stock: minStock,
         max_stock: maxStock,
         unit,
-        weight,
         dimensions,
         category_id: categoryId || undefined,
         category_ids: (categoryIds && categoryIds.length ? categoryIds : undefined),
@@ -161,6 +187,10 @@ export default function ProductCreatePage({ embedded = false, onClose }: { embed
         status,
         is_published: isPublished,
         is_active: isActive,
+        product_type: kind,
+      }
+      if (kind === 'SET') {
+        payload.set_items = (setSelected||[]).filter(x=> x.qty>0).map(x=> ({ product_id: x.product_id, quantity: Number(x.qty||0) }))
       }
       return productsService.create(payload)
     },
@@ -187,6 +217,9 @@ export default function ProductCreatePage({ embedded = false, onClose }: { embed
 
   const handleSelect = (key: string) => { setActive(key); const el = document.getElementById(`sec-${key}`); el?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }
 
+  // helper to open add modal
+  const openAddProducts = () => setSetModalOpen(true)
+
   return (
     <CustomMainBody>
       {!embedded && (
@@ -208,16 +241,33 @@ export default function ProductCreatePage({ embedded = false, onClose }: { embed
             
             <section id="sec-main" data-section="main" className="space-y-4">
               <h3 className="text-base font-semibold">{t('products.form.main')}</h3>
-              <div className="col-span-2">
-                  <div className="text-sm font-medium mb-2">Product variability</div>
-                  <RadioGroup orientation="horizontal" value={mode} onValueChange={(v)=> setMode(v as any)}>
-                    <Radio value="basic">Basic</Radio>
-                    <Radio value="variative">Variative</Radio>
-                  </RadioGroup>
+              <div className="grid grid-cols-1 gap-4">
+                <div>
+                  <div className="text-sm font-medium mb-2">Product type</div>
+                  <div className="grid grid-cols-3 gap-4">
+                    {(['PRODUCT','SERVICE','SET'] as const).map(k=> (
+                      <button key={k} className={`rounded-2xl h-14 px-5 text-left border ${kind===k?'bg-primary text-white border-primary':'bg-content2 border-default-300 text-foreground'}`} onClick={()=> setKind(k)}>
+                        <div className="flex items-center gap-3 h-full">
+                          <span className={`inline-block w-4 h-4 rounded-full border ${kind===k?'bg-white':'border-foreground/40'}`} />
+                          <span className="font-medium">{k==='PRODUCT'?'Product':k==='SERVICE'?'Service':'Set'}</span>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
                 </div>
+                {kind==='PRODUCT' && (
+                  <div>
+                    <div className="text-sm font-medium mb-2">Product variability</div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <button className={`rounded-2xl h-14 px-5 text-left border ${mode==='basic'?'bg-primary text-white border-primary':'bg-content2 border-default-300 text-foreground'}`} onClick={()=> setMode('basic')}>Basic</button>
+                      <button className={`rounded-2xl h-14 px-5 text-left border ${mode==='variative' && kind==='PRODUCT'?'bg-primary text-white border-primary':'bg-content2 border-default-300 text-foreground'}`} onClick={()=> kind==='PRODUCT' && setMode('variative')}>Variative</button>
+                    </div>
+                  </div>
+                )}
+              </div>
               <div className="grid grid-cols-2 gap-6">
                 <Input isRequired label={t('products.form.product_name')} placeholder={t('products.form.product_name_ph')} variant="bordered" classNames={{ inputWrapper: 'h-14' }} labelPlacement="inside" value={name} onValueChange={setName} />
-                <Select label={t('stores.header')} placeholder={t('stores.form.title_placeholder')} variant="bordered" classNames={{ trigger: 'h-14' }} labelPlacement="inside" selectedKeys={storeId ? [storeId] : []} onSelectionChange={(keys) => setStoreId(Array.from(keys)[0] as string || '')}>
+                <Select isRequired label={t('stores.header')} placeholder={t('stores.form.title_placeholder')} variant="bordered" classNames={{ trigger: 'h-14' }} labelPlacement="inside" selectedKeys={storeId ? [storeId] : []} onSelectionChange={(keys) => setStoreId(Array.from(keys)[0] as string || '')}>
                   {(storesQuery.data?.items || []).map(st => (<SelectItem key={st.id}>{st.title}</SelectItem>))}
                 </Select>
                 <Input label={t('products.form.part_number')} placeholder={t('products.form.part_number_ph')} variant="bordered" classNames={{ inputWrapper: 'h-14' }} labelPlacement="inside" value={partNumber} onValueChange={setPartNumber} />
@@ -245,36 +295,74 @@ export default function ProductCreatePage({ embedded = false, onClose }: { embed
                   value={supplierId}
                   onChange={setSupplierId}
                   allowCreate
-                  onCreate={()=>{ window.location.href = '/products/suppliers/create' }}
+                  onCreate={(term)=>{ setSupplierDrawerOpen(true); setSupplierJustCreatedName(term) }}
                 />
                 <Select label={t('products.form.unit')} placeholder={t('products.form.unit_ph')} variant="bordered" classNames={{ trigger: 'h-14' }} labelPlacement="inside" selectedKeys={[unit]} onSelectionChange={(keys) => setUnit(Array.from(keys)[0] as string)}>
                   <SelectItem key="pcs">pcs</SelectItem>
                   <SelectItem key="kg">kg</SelectItem>
                   <SelectItem key="m">m</SelectItem>
                 </Select>
-                <Input label={t('products.form.weight')} placeholder={t('products.form.weight_ph')} type="number" variant="bordered" classNames={{ inputWrapper: 'h-14' }} labelPlacement="inside" value={weight.toString()} onValueChange={(v) => setWeight(parseFloat(v) || 0)} />
+                {/* weight field removed globally */}
                 <div className="col-span-2"><Textarea label={t('products.form.description')} placeholder={t('products.form.description_ph')} variant="bordered" classNames={{ inputWrapper: 'min-h-[3.5rem]' }} value={description} onValueChange={setDescription} /></div>
               </div>
-              <div><h4 className="text-sm font-medium mb-4">{t('products.form.dimensions')}</h4>
-                <div className="grid grid-cols-4 gap-4">
-                  <Input label={t('products.form.length')} type="number" variant="bordered" classNames={{ inputWrapper: 'h-14' }} labelPlacement="inside" value={dimensions.length.toString()} onValueChange={(v) => setDimensions({...dimensions, length: parseFloat(v) || 0})} />
-                  <Input label={t('products.form.width')} type="number" variant="bordered" classNames={{ inputWrapper: 'h-14' }} labelPlacement="inside" value={dimensions.width.toString()} onValueChange={(v) => setDimensions({...dimensions, width: parseFloat(v) || 0})} />
-                  <Input label={t('products.form.height')} type="number" variant="bordered" classNames={{ inputWrapper: 'h-14' }} labelPlacement="inside" value={dimensions.height.toString()} onValueChange={(v) => setDimensions({...dimensions, height: parseFloat(v) || 0})} />
-                  <Select label={t('products.form.dim_unit')} variant="bordered" classNames={{ trigger: 'h-14' }} labelPlacement="inside" selectedKeys={[dimensions.unit]} onSelectionChange={(keys) => setDimensions({...dimensions, unit: Array.from(keys)[0] as string})}>
-                    <SelectItem key="cm">cm</SelectItem>
-                    <SelectItem key="mm">mm</SelectItem>
-                    <SelectItem key="m">m</SelectItem>
-                    <SelectItem key="in">in</SelectItem>
-                  </Select>
+              {kind!=='SET' && (
+                <div>
+                  <h4 className="text-sm font-medium mb-4">{t('products.form.dimensions')}</h4>
+                  <div className="grid grid-cols-4 gap-4">
+                    <Input label={t('products.form.length')} type="number" variant="bordered" classNames={{ inputWrapper: 'h-14' }} labelPlacement="inside" value={dimensions.length.toString()} onValueChange={(v) => setDimensions({...dimensions, length: parseFloat(v) || 0})} />
+                    <Input label={t('products.form.width')} type="number" variant="bordered" classNames={{ inputWrapper: 'h-14' }} labelPlacement="inside" value={dimensions.width.toString()} onValueChange={(v) => setDimensions({...dimensions, width: parseFloat(v) || 0})} />
+                    <Input label={t('products.form.height')} type="number" variant="bordered" classNames={{ inputWrapper: 'h-14' }} labelPlacement="inside" value={dimensions.height.toString()} onValueChange={(v) => setDimensions({...dimensions, height: parseFloat(v) || 0})} />
+                    <Select label={t('products.form.dim_unit')} variant="bordered" classNames={{ trigger: 'h-14' }} labelPlacement="inside" selectedKeys={[dimensions.unit]} onSelectionChange={(keys) => setDimensions({...dimensions, unit: Array.from(keys)[0] as string})}>
+                      <SelectItem key="cm">cm</SelectItem>
+                      <SelectItem key="mm">mm</SelectItem>
+                      <SelectItem key="m">m</SelectItem>
+                      <SelectItem key="in">in</SelectItem>
+                    </Select>
+                  </div>
                 </div>
-              </div>
+              )}
               {mode==='basic' && (<div><CustomDocumentUpload label={t('products.form.images')} accept="image/*" multiple={true} maxSize={10} maxFiles={10} value={images} onChange={setImages} /></div>)}
             </section>
 
-            {mode==='variative' && (
+            {mode==='variative' && kind==='PRODUCT' && (
               <section id="sec-variations" data-section="variations" className="space-y-4">
                 <h3 className="text-base font-semibold">Variations</h3>
                 <VariantsBuilder value={variants} onChange={(v:any)=> { setVariants(v as any) }} baseSku={sku} attributes={(catalogAttributesQuery.data?.items||[]).map((a:any)=> ({ id:a.id, name:a.name, values:a.values||[] }))} onExtrasChange={(items)=> setVariantExtras(items)} />
+              </section>
+            )}
+
+            {kind==='SET' && (
+              <section className="space-y-4">
+                <h3 className="text-base font-semibold">Product set</h3>
+                <div className="rounded-xl border border-default-300">
+                  <div className="grid grid-cols-[80px_1fr_160px_160px_200px_80px] items-center gap-3 px-4 py-3 text-sm text-default-500">
+                    <div>Photo</div>
+                    <div>Name</div>
+                    <div>SKU</div>
+                    <div>Barcode</div>
+                    <div>Quantity</div>
+                    <div></div>
+                  </div>
+                  <div className="divide-y">
+                    {(setSelected||[]).map(row=> (
+                      <div key={row.product_id} className="grid grid-cols-[80px_1fr_160px_160px_200px_80px] items-center gap-3 px-4 py-3">
+                        <div className="w-12 h-12 bg-default-200 rounded overflow-hidden grid place-items-center">{row.image?<img src={row.image} className="w-full h-full object-cover"/>:<span className="text-default-500">🖼️</span>}</div>
+                        <div className="truncate text-primary-600 hover:underline cursor-pointer" title={row.name}>{row.name}</div>
+                        <div>{row.sku}</div>
+                        <div>{row.barcode}</div>
+                        <div>
+                          <Input type="number" value={String(row.qty||0)} onValueChange={(v)=> setSetSelected(prev=> prev.map(it=> it.product_id===row.product_id? { ...it, qty: Math.max(0, Number(v||0)) } : it))} className="w-32" classNames={{ inputWrapper:'h-10' }} endContent={<span className="text-foreground/60 text-xs">шт</span>} />
+                        </div>
+                        <div>
+                          <Button color="danger" variant="flat" isIconOnly onPress={()=> setSetSelected(prev=> prev.filter(it=> it.product_id!==row.product_id))}>✕</Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="px-4 py-3 border-t">
+                    <Button variant="flat" className="w-full h-12" onPress={openAddProducts}>+ Add products</Button>
+                  </div>
+                </div>
               </section>
             )}
 
@@ -282,21 +370,24 @@ export default function ProductCreatePage({ embedded = false, onClose }: { embed
             <section id="sec-prices" data-section="prices" className="space-y-4">
               <h3 className="text-base font-semibold">{t('products.form.prices')}</h3>
               <div className="grid grid-cols-3 gap-6">
-                <Input isRequired label={t('products.form.cost_price') || 'Supply price'} placeholder={t('products.form.cost_price_ph')} type="number" variant="bordered" classNames={{ inputWrapper: 'h-14' }} labelPlacement="inside" value={costPrice.toString()} onValueChange={(v) => { const val = parseFloat(v)||0; setCostPrice(val); if (markup>0) setPrice(Math.round(val*(1+markup/100))) }} endContent={<span className="px-2 text-default-500">UZS</span>} />
+                <Input isRequired label={t('products.form.cost_price') || 'Supply price'} placeholder={t('products.form.cost_price_ph')} type="number" variant="bordered" classNames={{ inputWrapper: 'h-14' }} labelPlacement="inside" value={costPrice.toString()} onValueChange={(v) => { const val = parseFloat(v)||0; setCostPrice(val); if (markup>0) setPrice(Math.round(val*(1+markup/100))) }} endContent={<span className="px-2 text-default-500">UZS</span>} isDisabled={kind==='SET'} />
                 <Input label={'Markup'} placeholder={'0'} type="number" variant="bordered" classNames={{ inputWrapper: 'h-14' }} labelPlacement="inside" value={String(markup)} onValueChange={(v) => { const m = parseFloat(v)||0; setMarkup(m); if (costPrice>0) setPrice(Math.round(costPrice*(1+m/100))) }} endContent={<span className="px-2 text-default-500">%</span>} />
                 <Input isRequired label={'Retail price'} placeholder={'0'} type="number" variant="bordered" classNames={{ inputWrapper: 'h-14' }} labelPlacement="inside" value={price.toString()} onValueChange={(v) => { const p = parseFloat(v)||0; setPrice(p); if (costPrice>0) setMarkup(Math.round(((p - costPrice)/costPrice)*100)) }} endContent={<span className="px-2 text-default-500">UZS</span>} />
               </div>
             </section>
             )}
 
-            <section id="sec-quantity" data-section="quantity" className="space-y-4">
-              <h3 className="text-base font-semibold">{t('products.form.quantity')}</h3>
-              <div className="grid grid-cols-3 gap-6">
-                <Input label={t('products.form.stock')} placeholder={t('products.form.stock_ph')} type="number" variant="bordered" classNames={{ inputWrapper: 'h-14' }} labelPlacement="inside" value={stock.toString()} onValueChange={(v) => setStock(parseInt(v) || 0)} />
-                <Input label={t('products.form.min_stock')} placeholder={t('products.form.min_stock_ph')} type="number" variant="bordered" classNames={{ inputWrapper: 'h-14' }} labelPlacement="inside" value={minStock.toString()} onValueChange={(v) => setMinStock(parseInt(v) || 0)} />
-                <Input label={t('products.form.max_stock')} placeholder={t('products.form.max_stock_ph')} type="number" variant="bordered" classNames={{ inputWrapper: 'h-14' }} labelPlacement="inside" value={maxStock.toString()} onValueChange={(v) => setMaxStock(parseInt(v) || 0)} />
-              </div>
-            </section>
+            {/* Quantity hidden for SET (stock derived from base product) */}
+            {kind!=='SET' && (
+              <section id="sec-quantity" data-section="quantity" className="space-y-4">
+                <h3 className="text-base font-semibold">{t('products.form.quantity')}</h3>
+                <div className="grid grid-cols-3 gap-6">
+                  <Input label={t('products.form.stock')} placeholder={t('products.form.stock_ph')} type="number" variant="bordered" classNames={{ inputWrapper: 'h-14' }} labelPlacement="inside" value={stock.toString()} onValueChange={(v) => setStock(parseInt(v) || 0)} />
+                  <Input label={t('products.form.min_stock')} placeholder={t('products.form.min_stock_ph')} type="number" variant="bordered" classNames={{ inputWrapper: 'h-14' }} labelPlacement="inside" value={minStock.toString()} onValueChange={(v) => setMinStock(parseInt(v) || 0)} />
+                  <Input label={t('products.form.max_stock')} placeholder={t('products.form.max_stock_ph')} type="number" variant="bordered" classNames={{ inputWrapper: 'h-14' }} labelPlacement="inside" value={maxStock.toString()} onValueChange={(v) => setMaxStock(parseInt(v) || 0)} />
+                </div>
+              </section>
+            )}
 
             <section id="sec-characteristics" data-section="characteristics" className="space-y-4">
               <h3 className="text-base font-semibold">{t('products.form.characteristics')}</h3>
@@ -346,7 +437,7 @@ export default function ProductCreatePage({ embedded = false, onClose }: { embed
               <div className="flex flex-wrap items-center gap-6">
                 <Switch isSelected={isPublished} onValueChange={setIsPublished}>{t('products.form.published')}</Switch>
                 <Switch isSelected={isActive} onValueChange={setIsActive}>Is Active</Switch>
-                <Switch isSelected={isDirtyCore} onValueChange={setIsDirtyCore}>Is Dirty Core</Switch>
+                <Switch isSelected={isDirtyCore} onValueChange={setIsDirtyCore}>Is Core</Switch>
                 <Switch isSelected={isRealizatsiya} onValueChange={setIsRealizatsiya}>Is Realizatsiya</Switch>
                 <Switch isSelected={isKonsignatsiya} onValueChange={setIsKonsignatsiya}>Is Konsignatsiya</Switch>
               </div>
@@ -357,6 +448,7 @@ export default function ProductCreatePage({ embedded = false, onClose }: { embed
                 isOpen={editCharOpen}
                 mode="edit"
                 characteristic={editCharItem}
+                prefillOption={editCharNewValue}
                 onClose={()=> setEditCharOpen(false)}
                 onSuccess={async ()=> {
                   setEditCharOpen(false)
@@ -379,12 +471,17 @@ export default function ProductCreatePage({ embedded = false, onClose }: { embed
             )}
           </div>
 
+          {/* Footer */}
           <div className={`sticky bottom-0 mt-4 flex justify-end gap-2 ${embedded ? 'bg-white border-t border-default-200 p-4' : ''}`}>
             <Button variant="flat" onPress={() => { if (embedded) { onClose && onClose() } else { navigate('/products/catalog') } }}>{t('products.form.cancel')}</Button>
             <Button color="primary" onPress={() => createMutation.mutate()} isLoading={createMutation.isPending}>{t('products.form.create_btn')}</Button>
           </div>
         </div>
       </div>
+
+      {/* Modals */}
+      <CreateSupplierModal isOpen={supplierDrawerOpen} onOpenChange={setSupplierDrawerOpen} initialName={supplierJustCreatedName} onCreated={async (s)=> { setSupplierId(s.id); setSupplierJustCreatedName(s.name); await suppliersQuery.refetch() }} />
+      <SetAddProductsModal isOpen={setModalOpen} onOpenChange={setSetModalOpen} initial={setSelected} onConfirm={(items)=>{ setSetSelected(items); setSetModalOpen(false) }} />
     </CustomMainBody>
   )
 } 

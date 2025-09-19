@@ -3,7 +3,6 @@ import CustomMainBody from '../../components/common/CustomMainBody'
 import { Button, Input, Select, SelectItem, Textarea, Switch, DatePicker } from '@heroui/react'
 import CustomSelect from '../../components/common/CustomSelect'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { categoriesService } from '../../services/categoriesService'
 import { attributesService } from '../../services/attributesService'
 import { characteristicsService } from '../../services/characteristicsService'
 import { brandsService } from '../../services/brandsService'
@@ -18,7 +17,8 @@ import { storesService } from '../../services/storesService'
 import { companiesService } from '../../services/companiesService'
 import CategorySelector from './components/CategoryPicker'
 import CharacteristicModal from '../catalog/components/CharacteristicModal'
-import VariantsBuilder, { GeneratedVariant } from './components/VariantsBuilder'
+import VariantsBuilder from './components/VariantsBuilder'
+import SetAddProductsModal, { type SetSelectionItem } from './components/SetAddProductsModal'
 
 const sections = [
   { key: 'main', labelKey: 'products.form.main' },
@@ -76,7 +76,11 @@ export default function ProductEditPage() {
   const [konsignatsiyaDate, setKonsignatsiyaDate] = useState('')
   const [expirationDate, setExpirationDate] = useState('')
   const [mode, setMode] = useState<'basic'|'variative'>('basic')
-  const [variants, setVariants] = useState<GeneratedVariant[]>([])
+  const [variants, setVariants] = useState<any[]>([])
+  // SET support
+  const [isSet, setIsSet] = useState(false)
+  const [setModalOpen, setSetModalOpen] = useState(false)
+  const [setRows, setSetRows] = useState<SetSelectionItem[]>([])
 
   // Images
   const [images, setImages] = useState<string[]>([])
@@ -91,11 +95,12 @@ export default function ProductEditPage() {
   const storesQuery = useQuery({ queryKey: ['stores',1,200,'', companyId], queryFn: ()=> storesService.list({ page:1, limit:200, company_id: companyId||undefined }), placeholderData:(p)=>p })
   const catalogAttributesQuery = useQuery({ queryKey: ['catalog-attributes', 1, 100, ''], queryFn: () => attributesService.list({ page: 1, limit: 100 }), placeholderData: (prev) => prev })
   const catalogCharacteristicsQuery = useQuery({ queryKey: ['catalog-characteristics', 1, 100, ''], queryFn: () => characteristicsService.list({ page: 1, limit: 100 }), placeholderData: (prev) => prev })
+  const attributesQuery = useQuery({ queryKey: ['catalog-attributes', 1, 100, ''], queryFn: () => attributesService.list({ page: 1, limit: 100 }), placeholderData: (prev) => prev })
 
   const updateMutation = useMutation({
     mutationFn: async () => {
       if (!name || !sku || price <= 0) throw new Error('Please fill in all required fields')
-      const payload = {
+      const payload: any = {
         name,
         sku,
         part_number: partNumber,
@@ -127,6 +132,9 @@ export default function ProductEditPage() {
         is_konsignatsiya: isKonsignatsiya,
         konsignatsiya_date: isKonsignatsiya && konsignatsiyaDate ? new Date(konsignatsiyaDate).toISOString() : undefined,
         expiration_date: expirationDate ? new Date(expirationDate).toISOString() : undefined,
+      }
+      if (isSet) {
+        payload.set_items = (setRows||[]).filter(x=> x.qty>0).map(x=> ({ product_id: x.product_id, quantity: Number(x.qty||0) }))
       }
       return productsService.update(id!, payload)
     },
@@ -183,6 +191,22 @@ export default function ProductEditPage() {
       setIsKonsignatsiya(!!product.is_konsignatsiya)
       setKonsignatsiyaDate(product.konsignatsiya_date ? product.konsignatsiya_date.slice(0,10) : '')
       setExpirationDate(product.expiration_date ? product.expiration_date.slice(0,10) : '')
+
+      const kind = (product as any).product_type as ('PRODUCT'|'SET'|'SERVICE'|undefined)
+      const flagSet = kind === 'SET'
+      setIsSet(!!flagSet)
+      if (flagSet) {
+        const base = (((product as any).set_items)||[]) as { product_id:string; quantity:number }[]
+        const mapped: SetSelectionItem[] = base.map(it=> ({ product_id: it.product_id, qty: Number(it.quantity||0), name: '', sku: '', barcode: '', image: '', cost_price: 0 }))
+        setSetRows(mapped)
+        // fetch details for display and cost
+        Promise.all(mapped.map(async (m)=> {
+          try { const p = await productsService.get(m.product_id); return { id:m.product_id, p } } catch { return null }
+        })).then(list=>{
+          const details = list.filter(Boolean) as { id:string; p:any }[]
+          setSetRows(prev=> prev.map(it=> { const d = details.find(x=> x.id===it.product_id)?.p; return d? { ...it, name:d.name, sku:d.sku, barcode:d.barcode, image:(d.images||[])[0], cost_price: Number(d.cost_price||0) } : it }))
+        }).catch(()=>{})
+      }
     }
   }, [product])
 
@@ -208,6 +232,12 @@ export default function ProductEditPage() {
     const el = document.getElementById(`sec-${key}`)
     el?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
+
+  useEffect(()=>{
+    if (!isSet) return
+    const total = (setRows||[]).reduce((s,it)=> s + Number(it.cost_price||0) * Number(it.qty||0), 0)
+    setCostPrice(Math.round(total))
+  }, [isSet, setRows])
 
   if (isLoading) return <div>Loading...</div>
 
@@ -279,50 +309,89 @@ export default function ProductEditPage() {
                 </div>
               </div>
               
-              <div>
-                <h4 className="text-sm font-medium mb-4">{t('products.form.dimensions')}</h4>
-                <div className="grid grid-cols-4 gap-4">
-                  <Input label={t('products.form.length')} type="number" variant="bordered" classNames={{ inputWrapper: 'h-14' }} labelPlacement="inside" value={dimensions.length.toString()} onValueChange={(v) => setDimensions({...dimensions, length: parseFloat(v) || 0})} isReadOnly={isViewMode} />
-                  <Input label={t('products.form.width')} type="number" variant="bordered" classNames={{ inputWrapper: 'h-14' }} labelPlacement="inside" value={dimensions.width.toString()} onValueChange={(v) => setDimensions({...dimensions, width: parseFloat(v) || 0})} isReadOnly={isViewMode} />
-                  <Input label={t('products.form.height')} type="number" variant="bordered" classNames={{ inputWrapper: 'h-14' }} labelPlacement="inside" value={dimensions.height.toString()} onValueChange={(v) => setDimensions({...dimensions, height: parseFloat(v) || 0})} isReadOnly={isViewMode} />
-                  <Select label={t('products.form.dim_unit')} variant="bordered" classNames={{ trigger: 'h-14' }} labelPlacement="inside" selectedKeys={[dimensions.unit]} onSelectionChange={(keys) => setDimensions({...dimensions, unit: Array.from(keys)[0] as string})} isDisabled={isViewMode}>
-                    <SelectItem key="cm">cm</SelectItem>
-                    <SelectItem key="mm">mm</SelectItem>
-                    <SelectItem key="m">m</SelectItem>
-                    <SelectItem key="in">in</SelectItem>
-                  </Select>
+              {!isSet && (
+                <div>
+                  <h4 className="text-sm font-medium mb-4">{t('products.form.dimensions')}</h4>
+                  <div className="grid grid-cols-4 gap-4">
+                    <Input label={t('products.form.length')} type="number" variant="bordered" classNames={{ inputWrapper: 'h-14' }} labelPlacement="inside" value={dimensions.length.toString()} onValueChange={(v) => setDimensions({...dimensions, length: parseFloat(v) || 0})} isReadOnly={isViewMode} />
+                    <Input label={t('products.form.width')} type="number" variant="bordered" classNames={{ inputWrapper: 'h-14' }} labelPlacement="inside" value={dimensions.width.toString()} onValueChange={(v) => setDimensions({...dimensions, width: parseFloat(v) || 0})} isReadOnly={isViewMode} />
+                    <Input label={t('products.form.height')} type="number" variant="bordered" classNames={{ inputWrapper: 'h-14' }} labelPlacement="inside" value={dimensions.height.toString()} onValueChange={(v) => setDimensions({...dimensions, height: parseFloat(v) || 0})} isReadOnly={isViewMode} />
+                    <Select label={t('products.form.dim_unit')} variant="bordered" classNames={{ trigger: 'h-14' }} labelPlacement="inside" selectedKeys={[dimensions.unit]} onSelectionChange={(keys) => setDimensions({...dimensions, unit: Array.from(keys)[0] as string})} isDisabled={isViewMode}>
+                      <SelectItem key="cm">cm</SelectItem>
+                      <SelectItem key="mm">mm</SelectItem>
+                      <SelectItem key="m">m</SelectItem>
+                      <SelectItem key="in">in</SelectItem>
+                    </Select>
+                  </div>
                 </div>
-              </div>
-              
+              )}
+
               <div>
                 <CustomDocumentUpload label={t('products.form.images')} accept="image/*" multiple={true} maxSize={10} maxFiles={10} value={images} onChange={setImages} isReadOnly={isViewMode} />
               </div>
+
+              {isSet && (
+                <div>
+                  <h3 className="text-base font-semibold">Product set</h3>
+                  <div className="rounded-xl border border-default-300">
+                    <div className="grid grid-cols-[80px_1fr_160px_160px_200px_80px] items-center gap-3 px-4 py-3 text-sm text-default-500">
+                      <div>Photo</div>
+                      <div>Name</div>
+                      <div>SKU</div>
+                      <div>Barcode</div>
+                      <div>Quantity</div>
+                      <div></div>
+                    </div>
+                    <div className="divide-y">
+                      {(setRows||[]).map(row=> (
+                        <div key={row.product_id} className="grid grid-cols-[80px_1fr_160px_160px_200px_80px] items-center gap-3 px-4 py-3">
+                          <div className="w-12 h-12 bg-default-200 rounded overflow-hidden grid place-items-center">{row.image?<img src={row.image} className="w-full h-full object-cover"/>:<span className="text-default-500">🖼️</span>}</div>
+                          <div className="truncate text-primary-600 hover:underline cursor-pointer" title={row.name}>{row.name || row.product_id}</div>
+                          <div>{row.sku}</div>
+                          <div>{row.barcode}</div>
+                          <div>
+                            <Input type="number" value={String(row.qty||0)} onValueChange={(v)=> setSetRows(prev=> prev.map(it=> it.product_id===row.product_id? { ...it, qty: Math.max(0, Number(v||0)) } : it))} className="w-32" classNames={{ inputWrapper:'h-10' }} />
+                          </div>
+                          <div>
+                            <Button color="danger" variant="flat" isIconOnly onPress={()=> setSetRows(prev=> prev.filter(it=> it.product_id!==row.product_id))}>✕</Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="px-4 py-3 border-t">
+                      <Button variant="flat" className="w-full h-12" onPress={()=> setSetModalOpen(true)}>+ Add products</Button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </section>
 
             {mode==='variative' && (
               <section id="sec-variations" data-section="variations" className="space-y-4">
                 <h3 className="text-base font-semibold">Variations</h3>
-                <VariantsBuilder value={variants} onChange={setVariants} baseSku={sku} />
+                <VariantsBuilder value={variants} onChange={setVariants} baseSku={sku} attributes={(attributesQuery.data?.items||[]).map((a:any)=> ({ id:a.id, name:a.name, values:a.values||[] }))} />
               </section>
             )}
 
             <section id="sec-prices" data-section="prices" className="space-y-4">
               <h3 className="text-base font-semibold">{t('products.form.prices')}</h3>
               <div className="grid grid-cols-3 gap-6">
-                <Input isRequired label={t('products.form.cost_price') || 'Supply price'} placeholder={t('products.form.cost_price_ph')} type="number" variant="bordered" classNames={{ inputWrapper: 'h-14' }} labelPlacement="inside" value={costPrice.toString()} onValueChange={(v) => { const val = parseFloat(v)||0; setCostPrice(val); if (markup>0) setPrice(Math.round(val*(1+markup/100))) }} endContent={<span className="px-2 text-default-500">UZS</span>} isReadOnly={isViewMode} />
-                <Input label={'Markup'} placeholder={'0'} type="number" variant="bordered" classNames={{ inputWrapper: 'h-14' }} labelPlacement="inside" value={String(markup)} onValueChange={(v) => { const m = parseFloat(v)||0; setMarkup(m); if (costPrice>0) setPrice(Math.round(costPrice*(1+m/100))) }} endContent={<span className="px-2 text-default-500">%</span>} isReadOnly={isViewMode} />
-                <Input isRequired label={'Retail price'} placeholder={'0'} type="number" variant="bordered" classNames={{ inputWrapper: 'h-14' }} labelPlacement="inside" value={price.toString()} onValueChange={(v) => { const p = parseFloat(v)||0; setPrice(p); if (costPrice>0) setMarkup(Math.round(((p - costPrice)/costPrice)*100)) }} endContent={<span className="px-2 text-default-500">UZS</span>} isReadOnly={isViewMode} />
+                <Input isRequired label={t('products.form.cost_price') || 'Supply price'} placeholder={t('products.form.cost_price_ph')} type="number" variant="bordered" classNames={{ inputWrapper: 'h-14' }} labelPlacement="inside" value={costPrice.toString()} onValueChange={(v) => { const val = parseFloat(v)||0; setCostPrice(val); if (markup>0) setPrice(Math.round(val*(1+markup/100))) }} endContent={<span className="px-2 text-default-500">UZS</span>} isReadOnly={isViewMode} isDisabled={isSet} />
+                <Input label={'Markup'} placeholder={'0'} type="number" variant="bordered" classNames={{ inputWrapper: 'h-14' }} labelPlacement="inside" value={String(markup)} onValueChange={(v) => { const m = parseFloat(v)||0; setMarkup(m); if (costPrice>0) setPrice(Math.round(costPrice*(1+m/100))) }} endContent={<span className="px-2 text-default-500">%</span>} />
+                <Input isRequired label={'Retail price'} placeholder={'0'} type="number" variant="bordered" classNames={{ inputWrapper: 'h-14' }} labelPlacement="inside" value={price.toString()} onValueChange={(v) => { const p = parseFloat(v)||0; setPrice(p); if (costPrice>0) setMarkup(Math.round(((p - costPrice)/costPrice)*100)) }} endContent={<span className="px-2 text-default-500">UZS</span>} />
               </div>
             </section>
 
-            <section id="sec-quantity" data-section="quantity" className="space-y-4">
-              <h3 className="text-base font-semibold">{t('products.form.quantity')}</h3>
-              <div className="grid grid-cols-3 gap-6">
-                <Input label={t('products.form.stock')} placeholder={t('products.form.stock_ph')} type="number" variant="bordered" classNames={{ inputWrapper: 'h-14' }} labelPlacement="inside" value={stock.toString()} onValueChange={(v) => setStock(parseInt(v) || 0)} isReadOnly={isViewMode} />
-                <Input label={t('products.form.min_stock')} placeholder={t('products.form.min_stock_ph')} type="number" variant="bordered" classNames={{ inputWrapper: 'h-14' }} labelPlacement="inside" value={minStock.toString()} onValueChange={(v) => setMinStock(parseInt(v) || 0)} isReadOnly={isViewMode} />
-                <Input label={t('products.form.max_stock')} placeholder={t('products.form.max_stock_ph')} type="number" variant="bordered" classNames={{ inputWrapper: 'h-14' }} labelPlacement="inside" value={maxStock.toString()} onValueChange={(v) => setMaxStock(parseInt(v) || 0)} isReadOnly={isViewMode} />
-              </div>
-            </section>
+            {!isSet && (
+              <section id="sec-quantity" data-section="quantity" className="space-y-4">
+                <h3 className="text-base font-semibold">{t('products.form.quantity')}</h3>
+                <div className="grid grid-cols-3 gap-6">
+                  <Input label={t('products.form.stock')} placeholder={t('products.form.stock_ph')} type="number" variant="bordered" classNames={{ inputWrapper: 'h-14' }} labelPlacement="inside" value={stock.toString()} onValueChange={(v) => setStock(parseInt(v) || 0)} isReadOnly={isViewMode} />
+                  <Input label={t('products.form.min_stock')} placeholder={t('products.form.min_stock_ph')} type="number" variant="bordered" classNames={{ inputWrapper: 'h-14' }} labelPlacement="inside" value={minStock.toString()} onValueChange={(v) => setMinStock(parseInt(v) || 0)} isReadOnly={isViewMode} />
+                  <Input label={t('products.form.max_stock')} placeholder={t('products.form.max_stock_ph')} type="number" variant="bordered" classNames={{ inputWrapper: 'h-14' }} labelPlacement="inside" value={maxStock.toString()} onValueChange={(v) => setMaxStock(parseInt(v) || 0)} isReadOnly={isViewMode} />
+                </div>
+              </section>
+            )}
 
             <section id="sec-characteristics" data-section="characteristics" className="space-y-4">
               <h3 className="text-base font-semibold">{t('products.form.characteristics')}</h3>
@@ -369,13 +438,11 @@ export default function ProductEditPage() {
                 <label className="text-sm text-default-600 mb-2 block">{t('products.form.category')}</label>
                 <CategorySelector value={categoryIds} onChange={(ids)=> { setCategoryIds(ids); setCategoryId(ids[ids.length-1] || '') }} />
               </div>
-
-
-
+              
               <div className="flex flex-wrap items-center gap-6">
                 <Switch isSelected={isPublished} onValueChange={setIsPublished} isDisabled={isViewMode}>{t('products.form.published')}</Switch>
                 <Switch isSelected={isActive} onValueChange={setIsActive} isDisabled={isViewMode}>Is Active</Switch>
-                <Switch isSelected={isDirtyCore} onValueChange={setIsDirtyCore} isDisabled={isViewMode}>Is Dirty Core</Switch>
+                <Switch isSelected={isDirtyCore} onValueChange={setIsDirtyCore} isDisabled={isViewMode}>Is Core</Switch>
                 <Switch isSelected={isRealizatsiya} onValueChange={setIsRealizatsiya} isDisabled={isViewMode}>Is Realizatsiya</Switch>
                 <Switch isSelected={isKonsignatsiya} onValueChange={setIsKonsignatsiya} isDisabled={isViewMode}>Is Konsignatsiya</Switch>
               </div>
@@ -403,6 +470,9 @@ export default function ProductEditPage() {
           </div>
         </div>
       </div>
+
+      {/* Set modal */}
+      <SetAddProductsModal isOpen={setModalOpen} onOpenChange={setSetModalOpen} initial={setRows} onConfirm={(items)=>{ setSetRows(items) }} />
     </CustomMainBody>
   )
 } 

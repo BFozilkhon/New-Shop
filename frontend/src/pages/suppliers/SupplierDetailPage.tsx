@@ -10,6 +10,7 @@ import { ordersService, type Order } from '../../services/ordersService'
 import SupplierPaymentModal from './components/SupplierPaymentModal'
 import { suppliersService } from '../../services/suppliersService'
 import { BanknotesIcon, CheckBadgeIcon, XCircleIcon, ClockIcon, ShoppingCartIcon, ArrowDownTrayIcon } from '@heroicons/react/24/outline'
+import useCurrency from '../../hooks/useCurrency'
 
 export default function SupplierDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -17,6 +18,7 @@ export default function SupplierDetailPage() {
   const qc = useQueryClient()
   const [tab, setTab] = useState<'dashboard'|'orders'|'payments'|'information'|'products'>('dashboard')
   const [isPayOpen, setPayOpen] = useState(false)
+  const { format: fmt } = useCurrency()
 
   const supplierQ = useQuery({ queryKey:['supplier', id], queryFn: async ()=> (await apiClient.get<{ data:any }>(`/api/suppliers/${id}`)).data.data, enabled: !!id })
   const statsQ = useQuery({
@@ -101,7 +103,7 @@ export default function SupplierDetailPage() {
   )
 
   const StatMoney = ({ title, value }: { title: string; value: number }) => (
-    <StatCard title={title} value={Number(value||0)} unit="UZS" icon={<BanknotesIcon className="h-6 w-6 text-blue-500" />} />
+    <StatCard title={title} value={fmt(Number(value||0))} icon={<BanknotesIcon className="h-6 w-6 text-blue-500" />} />
   )
 
   const amountOfOrders = Number(statsQ.data?.amount_of_orders || 0)
@@ -128,7 +130,7 @@ export default function SupplierDetailPage() {
             <StatMoney title="Amount of payments to the supplier" value={amountPaid} />
           </div>
           <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            <StatMoney title="Current debt to the supplier" value={debt} />
+            <StatMoney title="Outstanding Balance" value={debt} />
             <StatCard title="Order frequency" value={statsQ.data?.order_frequency||'once a month'} icon={<ClockIcon className="h-6 w-6 text-blue-500" />} />
             <StatCard title="Total items ordered" value={statsQ.data?.total_items||0} unit="pcs" icon={<ShoppingCartIcon className="h-6 w-6 text-blue-500" />} />
             <StatCard title="Total items received" value={statsQ.data?.total_items||0} unit="pcs" icon={<ArrowDownTrayIcon className="h-6 w-6 text-blue-500" />} />
@@ -156,15 +158,15 @@ export default function SupplierDetailPage() {
                   case 'status': return row.status_id ? <Chip size="sm" className="bg-success-100 text-success-700">Accepted</Chip> : <Chip size="sm" variant="flat">-</Chip>
                   case 'payment': return (
                     <div className="flex gap-2 items-center">
-                      <Chip size="sm" className="bg-success-100 text-success-700">{Intl.NumberFormat('ru-RU').format(Number((row as any).total_paid_amount||0))} UZS</Chip>
-                      <Chip size="sm" className="bg-danger-100 text-danger-700">{Intl.NumberFormat('ru-RU').format(Math.max(0, Number((row as any).total_supply_price||0) - Number((row as any).total_paid_amount||0)))} UZS</Chip>
+                      <Chip size="sm" className="bg-success-100 text-success-700">{fmt(Number((row as any).total_paid_amount||0))}</Chip>
+                      <Chip size="sm" className="bg-danger-100 text-danger-700">{fmt(Math.max(0, Number((row as any).total_supply_price||0) - Number((row as any).total_paid_amount||0)))}</Chip>
                     </div>
                   )
                   case 'quantity': return <span>{(row as any).items_count ?? (row.items||[]).reduce((s,i)=> s + Number((i as any).quantity||0), 0)}</span>
                   case 'amounts': return (
                     <div className="flex gap-2 items-center">
-                      <Chip size="sm" className="bg-warning-100 text-warning-700">{Intl.NumberFormat('ru-RU').format(Number((row as any).total_supply_price||0))} UZS</Chip>
-                      <Chip size="sm" className="bg-purple-100 text-purple-700">{Intl.NumberFormat('ru-RU').format(Number((row as any).total_retail_price||0))} UZS</Chip>
+                      <Chip size="sm" className="bg-warning-100 text-warning-700">{fmt(Number((row as any).total_supply_price||0))}</Chip>
+                      <Chip size="sm" className="bg-purple-100 text-purple-700">{fmt(Number((row as any).total_retail_price||0))}</Chip>
                     </div>
                   )
                   case 'created_at': return new Date(row.created_at).toLocaleString()
@@ -193,7 +195,7 @@ export default function SupplierDetailPage() {
           <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
             <StatMoney title="Amount of orders" value={amountOfOrders} />
             <StatMoney title="Amount of payments to the supplier" value={amountPaid} />
-            <StatMoney title="Current debt to the supplier" value={debt} />
+            <StatMoney title="Outstanding Balance" value={debt} />
             <StatCard title="Number of paid" value={statsQ.data?.paid_orders||0} unit="orders" icon={<CheckBadgeIcon className="h-6 w-6 text-blue-500" />} />
             <StatCard title="Number of unpaid" value={statsQ.data?.unpaid_orders||0} unit="orders" icon={<XCircleIcon className="h-6 w-6 text-blue-500" />} />
             <StatCard title="Partially paid" value={statsQ.data?.partially_paid_orders||0} unit="orders" icon={<ClockIcon className="h-6 w-6 text-blue-500" />} />
@@ -201,7 +203,7 @@ export default function SupplierDetailPage() {
           <div className="mt-6">
             <CustomTable
               columns={paymentColumns}
-              items={(paymentsQ.data?.items||[]).map(p=> ({ ...p, payment_date: new Date(p.payment_date).toLocaleString(), amount: `${Intl.NumberFormat('ru-RU').format(Number(p.amount||0))} UZS` }))}
+              items={(paymentsQ.data?.items||[]).map(p=> ({ ...p, payment_date: new Date(p.payment_date).toLocaleString(), amount: fmt(Number(p.amount||0)) }))}
               total={paymentsQ.data?.total||0}
               page={1}
               limit={50}
@@ -275,8 +277,8 @@ export default function SupplierDetailPage() {
                   case 'barcode': return row.barcode || '-'
                   case 'category_name': return row.category_name || '-'
                   case 'quantity': return String(row.quantity ?? 0)
-                  case 'supply_price': return `${Intl.NumberFormat('ru-RU').format(Number(row.supply_price||0))} UZS`
-                  case 'retail_price': return `${Intl.NumberFormat('ru-RU').format(Number(row.retail_price||0))} UZS`
+                  case 'supply_price': return fmt(Number(row.supply_price||0))
+                  case 'retail_price': return fmt(Number(row.retail_price||0))
                   default: return String((row as any)[key] ?? '')
                 }
               }}

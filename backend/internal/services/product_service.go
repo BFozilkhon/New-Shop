@@ -2,7 +2,6 @@ package services
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"shop/backend/internal/models"
@@ -18,6 +17,7 @@ type ProductService struct {
 	categoryRepo *repositories.CategoryRepository
 	brandRepo    *repositories.BrandRepository
 	supplierRepo *repositories.SupplierRepository
+	importHistoryRepo *repositories.ImportHistoryRepository
 }
 
 func NewProductService(
@@ -25,16 +25,18 @@ func NewProductService(
 	categoryRepo *repositories.CategoryRepository,
 	brandRepo *repositories.BrandRepository,
 	supplierRepo *repositories.SupplierRepository,
+	importHistoryRepo *repositories.ImportHistoryRepository,
 ) *ProductService {
 	return &ProductService{
 		repo:         repo,
 		categoryRepo: categoryRepo,
 		brandRepo:    brandRepo,
 		supplierRepo: supplierRepo,
+		importHistoryRepo: importHistoryRepo,
 	}
 }
 
-func (s *ProductService) List(ctx context.Context, page, limit int64, search, categoryID string, categoryIDs []string, brandID, supplierID, status string, isActive, isBundle *bool, minPrice, maxPrice *float64, tenantID string, storeID string) ([]models.ProductDTO, int64, error) {
+func (s *ProductService) List(ctx context.Context, page, limit int64, search, categoryID string, categoryIDs []string, brandID, supplierID, status string, isActive, isBundle *bool, minPrice, maxPrice *float64, tenantID string, storeID string, productType string, excludeTypes []string) ([]models.ProductDTO, int64, error) {
 	items, total, err := s.repo.List(ctx, repositories.ProductListParams{
 		Page:       page,
 		Limit:      limit,
@@ -57,6 +59,8 @@ func (s *ProductService) List(ctx context.Context, page, limit int64, search, ca
         IsRealizatsiya: ctx.Value("is_realizatsiya").(*bool),
         IsKonsignatsiya: ctx.Value("is_konsignatsiya").(*bool),
         IsDirtyCore: ctx.Value("is_dirty_core").(*bool),
+        ProductType: productType,
+        ExcludeTypes: excludeTypes,
 	})
 	if err != nil {
 		return nil, 0, utils.Internal("PRODUCT_LIST_FAILED", "Unable to list products", err)
@@ -93,6 +97,24 @@ func (s *ProductService) List(ctx context.Context, page, limit int64, search, ca
 			if supplier, err := s.supplierRepo.Get(ctx, product.SupplierID); err == nil {
 				dto.SupplierName = supplier.Name
 			}
+		}
+
+		// Derived stock for SET = min(floor(component stock / qty))
+		if product.ProductType == models.ProductKindSet && len(product.SetItems) > 0 {
+			minAvail := -1
+			for _, it := range product.SetItems {
+				if it.Quantity <= 0 { continue }
+				comp, err := s.repo.Get(ctx, it.ProductID, tenantID)
+				avail := 0
+				if err == nil {
+					avail = comp.Stock / it.Quantity
+				} else {
+					avail = 0
+				}
+				if minAvail == -1 || avail < minAvail { minAvail = avail }
+			}
+			if minAvail < 0 { minAvail = 0 }
+			dto.Stock = minAvail
 		}
 		
 		out[i] = dto
@@ -142,6 +164,20 @@ func (s *ProductService) Get(ctx context.Context, id string, tenantID string) (*
 		}
 	}
 
+	// Derived stock for SET
+	if m.ProductType == models.ProductKindSet && len(m.SetItems) > 0 {
+		minAvail := -1
+		for _, it := range m.SetItems {
+			if it.Quantity <= 0 { continue }
+			comp, err := s.repo.Get(ctx, it.ProductID, tenantID)
+			avail := 0
+			if err == nil { avail = comp.Stock / it.Quantity } else { avail = 0 }
+			if minAvail == -1 || avail < minAvail { minAvail = avail }
+		}
+		if minAvail < 0 { minAvail = 0 }
+		dto.Stock = minAvail
+	}
+
 	return &dto, nil
 }
 
@@ -154,6 +190,18 @@ func (s *ProductService) Create(ctx context.Context, body models.ProductCreate, 
 	}
 	if body.Price < 0 {
 		return nil, utils.BadRequest("VALIDATION_ERROR", "Product price must be non-negative", nil)
+	}
+	// Require store on create
+	if body.StoreID == "" {
+		return nil, utils.BadRequest("STORE_REQUIRED", "Store is required", nil)
+	}
+
+	// Business kind defaults and restrictions
+	kind := body.ProductType
+	if kind == "" { kind = models.ProductKindProduct }
+	// SET cannot have variants; enforce
+	if kind == models.ProductKindSet && len(body.Variants) > 0 {
+		return nil, utils.BadRequest("SET_NO_VARIANTS", "SET cannot have variants", nil)
 	}
 
 	// Check if SKU already exists (skip for bulk variant creation where all variants share same SKU)
@@ -243,6 +291,9 @@ func (s *ProductService) Create(ctx context.Context, body models.ProductCreate, 
 		BundlePrice: body.BundlePrice,
 		BundleItems: body.BundleItems,
 
+		ProductType: kind,
+		SetItems:    body.SetItems,
+
 		Barcode:              body.Barcode,
 		ExpirationDate:       body.ExpirationDate,
 		IsDirtyCore:          body.IsDirtyCore,
@@ -253,6 +304,7 @@ func (s *ProductService) Create(ctx context.Context, body models.ProductCreate, 
 		Status:               body.Status,
 		IsPublished:          body.IsPublished,
 		IsActive:             true,
+		IsVariant:            body.IsVariant,
 	}
 
 	// Convert string IDs to ObjectIDs
@@ -290,6 +342,16 @@ func (s *ProductService) Create(ctx context.Context, body models.ProductCreate, 
 		return nil, utils.Internal("PRODUCT_CREATE_FAILED", "Unable to create product", err)
 	}
 
+	// Record import if initial stock > 0 and not a SET/SERVICE (they are informational)
+	if m.Stock > 0 && s.importHistoryRepo != nil && m.ProductType == models.ProductKindProduct {
+		go func() {
+			defer func(){ _ = recover() }()
+			svc := NewImportHistoryService(s.importHistoryRepo)
+			item := models.ImportHistoryItemInput{ ProductID: created.ID.Hex(), ProductName: m.Name, ProductSKU: m.SKU, Barcode: m.Barcode, Qty: int(m.Stock), Unit: m.Unit }
+			_, _ = svc.Create(ctx, tenantID, "", models.CreateImportHistoryRequest{ FileName: "Product creation", StoreID: body.StoreID, StoreName: "", TotalRows: 1, SuccessRows: 1, ErrorRows: 0, Status: "completed", ImportType: "PRODUCT_CREATION", Items: []models.ImportHistoryItemInput{ item } })
+		}()
+	}
+
 	// Return DTO with resolved names
 	return s.Get(ctx, created.ID.Hex(), tenantID)
 }
@@ -298,6 +360,12 @@ func (s *ProductService) Update(ctx context.Context, id string, body models.Prod
 	oid, err := primitive.ObjectIDFromHex(id)
 	if err != nil {
 		return nil, utils.BadRequest("INVALID_ID", "Invalid product id", nil)
+	}
+
+	// Read existing to detect stock changes later
+	existing, err := s.repo.Get(ctx, oid, tenantID)
+	if err != nil {
+		return nil, utils.NotFound("PRODUCT_NOT_FOUND", "Product not found", err)
 	}
 
 	// Check if SKU is being updated and if it already exists
@@ -471,6 +539,18 @@ func (s *ProductService) Update(ctx context.Context, id string, body models.Prod
 		update["bundle_items"] = body.BundleItems
 	}
 
+	// Business kind
+	if body.ProductType != nil {
+		pt := *body.ProductType
+		if pt != models.ProductKindProduct && pt != models.ProductKindSet && pt != models.ProductKindService {
+			return nil, utils.BadRequest("INVALID_PRODUCT_KIND", "Invalid product kind. Valid: PRODUCT, SET, SERVICE", nil)
+		}
+		update["product_type"] = pt
+	}
+	if body.SetItems != nil {
+		update["set_items"] = body.SetItems
+	}
+
 	// Other fields
 	if body.Barcode != nil {
 		update["barcode"] = *body.Barcode
@@ -511,6 +591,23 @@ func (s *ProductService) Update(ctx context.Context, id string, body models.Prod
 		return nil, utils.Internal("PRODUCT_UPDATE_FAILED", "Unable to update product", err)
 	}
 
+	// Record import if stock increased via update and only for normal products
+	if body.Stock != nil && s.importHistoryRepo != nil && updated.ProductType == models.ProductKindProduct {
+		oldStock := existing.Stock
+		newStock := *body.Stock
+		if newStock > oldStock {
+			delta := newStock - oldStock
+			go func() {
+				defer func(){ _ = recover() }()
+				svc := NewImportHistoryService(s.importHistoryRepo)
+				item := models.ImportHistoryItemInput{ ProductID: updated.ID.Hex(), ProductName: updated.Name, ProductSKU: updated.SKU, Barcode: updated.Barcode, Qty: int(delta), Unit: updated.Unit }
+				storeHex := ""
+				if updated.StoreID != primitive.NilObjectID { storeHex = updated.StoreID.Hex() }
+				_, _ = svc.Create(ctx, tenantID, "", models.CreateImportHistoryRequest{ FileName: "Product stock update", StoreID: storeHex, StoreName: "", TotalRows: 1, SuccessRows: 1, ErrorRows: 0, Status: "completed", ImportType: "PRODUCT_STORE", Items: []models.ImportHistoryItemInput{ item } })
+			}()
+		}
+	}
+
 	// Return DTO with resolved names
 	return s.Get(ctx, updated.ID.Hex(), tenantID)
 }
@@ -519,14 +616,15 @@ func (s *ProductService) Update(ctx context.Context, id string, body models.Prod
 func (s *ProductService) BulkCreateVariants(ctx context.Context, body models.BulkVariantsCreate, tenantID string) ([]models.ProductDTO, error) {
     if body.Name == "" || body.SKU == "" { return nil, utils.BadRequest("VALIDATION_ERROR", "Name and SKU are required", nil) }
     if len(body.Variants) == 0 { return nil, utils.BadRequest("VALIDATION_ERROR", "At least one variant required", nil) }
+    // Require store for variants bulk create as well
+    if body.StoreID == "" { return nil, utils.BadRequest("STORE_REQUIRED", "Store is required", nil) }
 
     results := make([]models.ProductDTO, 0, len(body.Variants))
     for idx, v := range body.Variants {
         nm := body.Name
         if v.NameSuffix != "" { nm = nm + " " + v.NameSuffix }
-        // Preserve base SKU in additional parameters and make stored SKU unique to avoid DB unique index conflicts
+        // Keep base SKU the same for all variants. Rely on Create() skip to bypass uniqueness.
         sku := body.SKU
-        if sku != "" { sku = sku + "-" + fmt.Sprintf("v%02d", idx+1) }
         pc := models.ProductCreate{
             Name: nm,
             SKU:  sku,
@@ -560,6 +658,7 @@ func (s *ProductService) BulkCreateVariants(ctx context.Context, body models.Bul
             AdditionalParameters: map[string]any{"variant_index": idx, "base_sku": body.SKU},
             Status:      "active",
             IsPublished: false,
+            IsVariant:   true,
         }
         dto, err := s.Create(ctx, pc, tenantID)
         if err != nil { return nil, err }

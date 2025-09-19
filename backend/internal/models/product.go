@@ -44,6 +44,11 @@ type Product struct {
 	BundlePrice *float64     `bson:"bundle_price,omitempty" json:"bundle_price,omitempty"` // bundle price if different from sum
 	BundleItems []BundleItem `bson:"bundle_items,omitempty" json:"bundle_items,omitempty"` // bundle elements
 
+	// Business kind for product: PRODUCT | SET | SERVICE
+	ProductType string `bson:"product_type" json:"product_type"`
+	// Composition for SET kind
+	SetItems    []SetItem `bson:"set_items,omitempty" json:"set_items,omitempty"`
+
 	Barcode              string                 `bson:"barcode" json:"barcode"`
 	ExpirationDate       *time.Time             `bson:"expiration_date,omitempty" json:"expiration_date,omitempty"`
 	IsDirtyCore          bool                   `bson:"is_dirty_core" json:"is_dirty_core"`
@@ -54,6 +59,7 @@ type Product struct {
 	Status               string                 `bson:"status" json:"status"` // active, inactive
 	IsPublished          bool                   `bson:"is_published" json:"is_published"`
 	IsActive             bool                   `bson:"is_active" json:"is_active"`
+	IsVariant            bool                   `bson:"is_variant" json:"is_variant"`
 
 	Archived   bool        `bson:"archived" json:"archived"`
 	ArchivedAt *time.Time  `bson:"archived_at,omitempty" json:"archived_at,omitempty"`
@@ -121,12 +127,22 @@ type BundleItem struct {
 	Price     *float64           `bson:"price,omitempty" json:"price,omitempty"` // override price if needed
 }
 
-// Product status constants
+// Set item for SET kind
+type SetItem struct {
+	ProductID primitive.ObjectID `bson:"product_id" json:"product_id"`
+	Quantity  int                `bson:"quantity" json:"quantity"`
+}
+
+// Product status and type constants
 const (
 	ProductStatusActive   = "active"
 	ProductStatusInactive = "inactive"
 	ProductTypeSingle     = "single"
 	ProductTypeBundle     = "bundle"
+
+	ProductKindProduct = "PRODUCT"
+	ProductKindSet     = "SET"
+	ProductKindService = "SERVICE"
 )
 
 // DTO structs
@@ -171,6 +187,9 @@ type ProductDTO struct {
 	BundlePrice *float64     `json:"bundle_price,omitempty"`
 	BundleItems []BundleItem `json:"bundle_items,omitempty"`
 
+	ProductType string                 `json:"product_type"`
+	SetItems    []SetItem              `json:"set_items,omitempty"`
+
 	Barcode              string                 `json:"barcode"`
 	ExpirationDate       *time.Time             `json:"expiration_date,omitempty"`
 	IsDirtyCore          bool                   `json:"is_dirty_core"`
@@ -181,6 +200,7 @@ type ProductDTO struct {
 	Status               string                 `json:"status"`
 	IsPublished          bool                   `json:"is_published"`
 	IsActive             bool                   `json:"is_active"`
+	IsVariant            bool                   `json:"is_variant"`
 
 	Archived   bool        `json:"archived"`
 	ArchivedAt *time.Time  `json:"archived_at,omitempty"`
@@ -224,6 +244,9 @@ type ProductCreate struct {
 	BundlePrice *float64     `json:"bundle_price,omitempty"`
 	BundleItems []BundleItem `json:"bundle_items,omitempty"`
 
+	ProductType string                 `json:"product_type"`
+	SetItems    []SetItem              `json:"set_items,omitempty"`
+
 	Barcode              string                 `json:"barcode"`
 	ExpirationDate       *time.Time             `json:"expiration_date,omitempty"`
 	IsDirtyCore          bool                   `json:"is_dirty_core"`
@@ -233,6 +256,7 @@ type ProductCreate struct {
 	AdditionalParameters map[string]interface{} `json:"additional_parameters,omitempty"`
 	Status               string                 `json:"status"`
 	IsPublished          bool                   `json:"is_published"`
+	IsVariant            bool                   `json:"is_variant"`
 }
 
 // Bulk create from generated variants
@@ -294,6 +318,9 @@ type ProductUpdate struct {
 	BundlePrice *float64     `json:"bundle_price"`
 	BundleItems []BundleItem `json:"bundle_items"`
 
+	ProductType *string                `json:"product_type"`
+	SetItems    []SetItem              `json:"set_items"`
+
 	Barcode              *string                `json:"barcode"`
 	ExpirationDate       *time.Time             `json:"expiration_date"`
 	IsDirtyCore          *bool                  `json:"is_dirty_core"`
@@ -336,6 +363,9 @@ func ToProductDTO(m Product) ProductDTO {
 		BundlePrice: m.BundlePrice,
 		BundleItems: m.BundleItems,
 
+		ProductType: m.ProductType,
+		SetItems:    m.SetItems,
+
 		Barcode:              m.Barcode,
 		ExpirationDate:       m.ExpirationDate,
 		IsDirtyCore:          m.IsDirtyCore,
@@ -346,6 +376,7 @@ func ToProductDTO(m Product) ProductDTO {
 		Status:               m.Status,
 		IsPublished:          m.IsPublished,
 		IsActive:             m.IsActive,
+		IsVariant:            m.IsVariant,
 		CreatedAt:            m.CreatedAt,
 		UpdatedAt:            m.UpdatedAt,
 

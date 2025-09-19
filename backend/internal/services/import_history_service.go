@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"math/rand"
 	"shop/backend/internal/models"
 	"shop/backend/internal/repositories"
 	"shop/backend/internal/utils"
@@ -35,9 +36,30 @@ func (s *ImportHistoryService) Create(ctx context.Context, tenantID, userID stri
 	if userID != "" { if id, err2 := primitive.ObjectIDFromHex(userID); err2 == nil { uoid = id } }
 	var soid primitive.ObjectID
 	if body.StoreID != "" { if id, err2 := primitive.ObjectIDFromHex(body.StoreID); err2 == nil { soid = id } }
-	m := &models.ImportHistory{ TenantID: toid, UserID: uoid, FileName: body.FileName, StoreID: soid, StoreName: body.StoreName, TotalRows: body.TotalRows, SuccessRows: body.SuccessRows, ErrorRows: body.ErrorRows, Status: body.Status }
+	// map items
+	items := make([]models.ImportHistoryItem, 0, len(body.Items))
+	for _, it := range body.Items {
+		var pid primitive.ObjectID
+		if it.ProductID != "" { if id, err := primitive.ObjectIDFromHex(it.ProductID); err == nil { pid = id } }
+		items = append(items, models.ImportHistoryItem{ ProductID: pid, ProductName: it.ProductName, ProductSKU: it.ProductSKU, Barcode: it.Barcode, Qty: it.Qty, Unit: it.Unit })
+	}
+	// generate external numeric id (6-7 digits)
+	rnd := int64(100000 + rand.Intn(900000))
+	m := &models.ImportHistory{ TenantID: toid, UserID: uoid, ExternalID: rnd, FileName: body.FileName, StoreID: soid, StoreName: body.StoreName, TotalRows: body.TotalRows, SuccessRows: body.SuccessRows, ErrorRows: body.ErrorRows, Status: body.Status, ImportType: body.ImportType, Items: items }
 	m, err = s.repo.Create(ctx, m)
 	if err != nil { return nil, utils.Internal("IMPORT_HISTORY_CREATE_FAILED", "Unable to create import history", err) }
+	dto := models.ToImportHistoryDTO(*m)
+	return &dto, nil
+}
+
+func (s *ImportHistoryService) Get(ctx context.Context, tenantID, id string) (*models.ImportHistoryDTO, error) {
+	if tenantID == "" { return nil, utils.BadRequest("TENANT_REQUIRED", "Tenant is required", nil) }
+	toid, err := primitive.ObjectIDFromHex(tenantID)
+	if err != nil { return nil, utils.BadRequest("INVALID_TENANT", "Invalid tenant", err) }
+	oid, err := primitive.ObjectIDFromHex(id)
+	if err != nil { return nil, utils.BadRequest("INVALID_ID", "Invalid import id", err) }
+	m, err := s.repo.Get(ctx, oid, toid)
+	if err != nil { return nil, utils.NotFound("IMPORT_NOT_FOUND", "Import not found", err) }
 	dto := models.ToImportHistoryDTO(*m)
 	return &dto, nil
 } 

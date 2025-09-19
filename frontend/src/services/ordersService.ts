@@ -4,7 +4,7 @@ import type { Paginated } from './productsService'
 export type OrderUser = { id: string; name: string }
 export type OrderShop = { id: string; name: string }
 export type OrderSupplier = { id: string; name: string; phone_numbers?: string[] }
-export type OrderItem = { id?: string; product_id?: string; product_name?: string; product_sku?: string; quantity: number; unit_price: number; total_price?: number; supply_price?: number; retail_price?: number; unit?: string }
+export type OrderItem = { id?: string; product_id?: string; product_name?: string; product_sku?: string; quantity: number; unit_price: number; total_price?: number; supply_price?: number; retail_price?: number; unit?: string; returned_quantity?: number }
 
 export type Order = {
   id: string

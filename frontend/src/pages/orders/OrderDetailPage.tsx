@@ -12,6 +12,8 @@ import { toast } from 'react-toastify'
 import { useQuery } from '@tanstack/react-query'
 import ConfirmModal from '../../components/common/ConfirmModal'
 import CreateProductDrawer from '../products/components/CreateProductDrawer'
+import useCurrency from '../../hooks/useCurrency'
+import MoneyAt from '../../components/common/MoneyAt'
 
 export default function OrderDetailPage() {
   const { t } = useTranslation()
@@ -22,6 +24,7 @@ export default function OrderDetailPage() {
   const [items, setItems] = useState<any[]>([])
   const [activeTab, setActiveTab] = useState<'products'|'details'|'payments'>('products')
   const [productFilter, setProductFilter] = useState<'ordered'|'all'|'low'|'zero'>('all')
+  const { format: fmt } = useCurrency()
 
   // payments
   const [payments, setPayments] = useState<any[]>([])
@@ -192,14 +195,14 @@ export default function OrderDetailPage() {
 
   const updateItem = (idx:number, field:string, value:any) => { const next=[...items]; next[idx] = { ...next[idx], [field]: ['quantity','unit_price','supply_price','retail_price'].includes(field) ? Number(value)||0 : value }; if(['quantity','unit_price','retail_price'].includes(field)){ const q=Number(next[idx].quantity)||0, up=Number(next[idx].retail_price ?? next[idx].unit_price)||0; next[idx].total_price=+(q*up).toFixed(2) } setItems(next) }
 
-  const formatCurrency = (v:number) => new Intl.NumberFormat('ru-RU').format(Number(v||0))
+  const formatCurrency = (v:number) => fmt(Number(v||0))
   const safeDate = (d?:string) => { if(!d) return '—'; try{ return new Date(d).toLocaleString('ru-RU') } catch { return '—' } }
 
   // products for table
   const { data: productPage, isLoading: listLoading } = useQuery({
     queryKey: ['products-list', term, page, limit, productFilter],
     queryFn: async ()=> {
-      const params: any = { page, limit, search: term }
+      const params: any = { page, limit, search: term, exclude_types: ['SET','SERVICE'] }
       if (productFilter === 'low') params.low_stock = true
       if (productFilter === 'zero') params.zero_stock = true
       return productsService.list(params)
@@ -217,7 +220,7 @@ export default function OrderDetailPage() {
     const t = setTimeout(async ()=>{
       if (code === lastScan) return
       try {
-        const res:any = await productsService.list({ page:1, limit:10, search: code })
+        const res:any = await productsService.list({ page:1, limit:10, search: code, exclude_types:['SET','SERVICE'] })
         const found = (res?.items||[]).find((p:any)=> String(p?.barcode||'') === code)
         if (found) {
           addOrIncrementProduct(found, 1)
@@ -291,7 +294,7 @@ export default function OrderDetailPage() {
       case 'declared':
         return Number(row.declared||0)
       case 'supply_price': {
-        if (order?.is_finished) return `${Intl.NumberFormat('ru-RU').format(row.supply_price||0)} UZS`
+        if (order?.is_finished) return <MoneyAt amount={Number(row.supply_price||0)} date={order?.created_at as any} />
         const idx = items.findIndex((x:any)=> x.product_id === row.product_id)
         const onChange = (v: string) => {
           if (idx >= 0) {
@@ -309,7 +312,7 @@ export default function OrderDetailPage() {
             setItems(next)
           }
         }
-        if (idx < 0) return `${Intl.NumberFormat('ru-RU').format(row.supply_price||0)} UZS`
+        if (idx < 0) return fmt(Number(row.supply_price||0))
         return <Input type="number" value={String(items[idx]?.supply_price ?? row.supply_price ?? 0)} onValueChange={onChange} className="w-48" classNames={{ inputWrapper:'h-10' }} />
       }
       case 'markup': {
@@ -333,7 +336,7 @@ export default function OrderDetailPage() {
         return <Input type="number" value={String(Math.round((currentMu + Number.EPSILON)*100)/100)} onValueChange={onChange} className="w-32" classNames={{ inputWrapper:'h-10' }} endContent={<span className="text-foreground/60 text-xs">%</span>} />
       }
       case 'retail_price': {
-        if (order?.is_finished) return `${Intl.NumberFormat('ru-RU').format(row.retail_price||0)} UZS`
+        if (order?.is_finished) return <MoneyAt amount={Number(row.retail_price||0)} date={order?.created_at as any} />
         const idx = items.findIndex((x:any)=> x.product_id === row.product_id)
         const onChange = (v: string) => {
           if (idx >= 0) {
@@ -350,7 +353,7 @@ export default function OrderDetailPage() {
             setItems(next)
           }
         }
-        if (idx < 0) return `${Intl.NumberFormat('ru-RU').format(row.retail_price||0)} UZS`
+        if (idx < 0) return fmt(Number(row.retail_price||0))
         return <Input type="number" value={String(items[idx]?.retail_price ?? row.retail_price ?? 0)} onValueChange={onChange} className="w-48" classNames={{ inputWrapper:'h-10' }} />
       }
       case 'qty': {
@@ -422,7 +425,7 @@ export default function OrderDetailPage() {
               onSearchChange={setTerm}
               onSearchClear={()=> setTerm('')}
               isLoading={!order?.is_finished && productFilter!=='ordered' && listLoading}
-              onCreate={!order?.is_finished && productFilter!=='ordered' && term ? (()=> setDrawerOpen(true)) : undefined}
+              onCreate={!order?.is_finished && productFilter!=='ordered' ? (()=> setDrawerOpen(true)) : undefined}
               createLabel={term ? `Create "${term}"` : 'Create product'}
               topTabs={!order?.is_finished ? [
                 { key:'ordered', label:'Ordered' },
@@ -515,7 +518,7 @@ export default function OrderDetailPage() {
                             <td className="px-6 py-3 text-sm">{safeDate(p.payment_date)}</td>
                             <td className="px-6 py-3 text-sm">{p.payment_method === 'cash' ? 'Наличные' : 'Безналичные'}</td>
                             <td className="px-6 py-3 text-sm">{p.account_name || '-'}</td>
-                            <td className="px-6 py-3 text-sm text-right">{formatCurrency(p.amount)} UZS</td>
+                            <td className="px-6 py-3 text-sm text-right">{formatCurrency(p.amount)}</td>
                             <td className="px-6 py-3 text-sm">{p.description || '-'}</td>
                           </tr>
                         ))}
@@ -592,7 +595,7 @@ function StatCard({ icon: Icon, title, value }: { icon: any; title: string; valu
     <div className="rounded-2xl bg-gray-900 border border-gray-700 p-5 flex items-center justify-between">
       <div>
         <div className="text-sm text-gray-200">{title}</div>
-        <div className="mt-2 text-2xl font-semibold tracking-wide"><span className="text-blue-500">{value}</span> <span className="text-gray-300 text-base ml-1">UZS</span></div>
+        <div className="mt-2 text-2xl font-semibold tracking-wide"><span className="text-blue-500">{value}</span></div>
       </div>
       <div className="h-11 w-11 rounded-full bg-gray-800 flex items-center justify-center"><Icon className="h-6 w-6 text-blue-500" /></div>
     </div>

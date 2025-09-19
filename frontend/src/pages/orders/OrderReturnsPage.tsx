@@ -1,10 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Input, Select, SelectItem, Button } from '@heroui/react'
+import { Input, Select, SelectItem, Button, Dropdown, DropdownTrigger, DropdownMenu, DropdownItem } from '@heroui/react'
 import CustomMainBody from '../../components/common/CustomMainBody'
 import CustomTable from '../../components/common/CustomTable'
 import CustomModal from '../../components/common/CustomModal'
 import { ordersService, type Order } from '../../services/ordersService'
+import { usePreferences } from '../../store/prefs'
+import useCurrency from '../../hooks/useCurrency'
+import MoneyAt from '../../components/common/MoneyAt'
 
 export default function OrderReturnsPage() {
   const navigate = useNavigate()
@@ -19,6 +22,8 @@ export default function OrderReturnsPage() {
   const [isOpen, setIsOpen] = useState(false)
   const [shops, setShops] = useState<{ id: string; name: string }[]>([])
   const [suppliers, setSuppliers] = useState<{ id: string; name: string }[]>([])
+  const { prefs } = usePreferences()
+  const { format: fmt } = useCurrency()
 
   useEffect(() => {
     ordersService.getShops().then(setShops).catch(() => setShops([]))
@@ -37,34 +42,41 @@ export default function OrderReturnsPage() {
   }
   useEffect(() => { load() }, [page, limit, search])
 
-  const tableItems = useMemo(() => (items || []).map((o) => ({
-    id: o.id,
-    name: o.name,
-    supplier: o.supplier?.name || '-',
-    shop: o.shop?.name || '-',
-    items_count: o.items_count || (o.items?.length || 0),
-    total_price: o.total_price || 0,
-    created_at: new Date(o.created_at).toLocaleString(),
-    status: 'Returned',
-  })), [items])
+  const tableItems = useMemo(() => (items || []).map((o) => {
+    const refundQty = (o.items || []).reduce((sum:number, it:any)=> sum + Number((it as any).returned_quantity||0), 0)
+    const refundMoney = (o.items || []).reduce((sum:number, it:any)=> sum + Number((it as any).returned_quantity||0) * Number((it as any).unit_price||0), 0)
+    return {
+      id: o.id,
+      external_id: o.external_id || 0,
+      name: o.name,
+      shop: o.shop?.name || '-',
+      supplier: o.supplier?.name || '-',
+      status: (o.is_finished ? (String(o.status_id).toLowerCase()==='accepted'?'Accepted':'Rejected') : 'In Progress'),
+      refund_money: refundMoney,
+      refund_qty: refundQty,
+      created_at: new Date(o.created_at).toLocaleString(),
+      created_by: o.created_by?.name || '-',
+    }
+  }), [items])
 
   return (
     <CustomMainBody>
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-xl font-semibold">Order returns</h1>
-        <Button color="primary" onPress={() => setIsOpen(true)}>Create</Button>
+        <Button color="primary" onPress={() => setIsOpen(true)}>New order return</Button>
       </div>
 
       <CustomTable
         columns={[
-          { uid: 'id', name: 'ID' },
+          { uid: 'external_id', name: 'ID' },
           { uid: 'name', name: 'Name' },
           { uid: 'shop', name: 'Store' },
           { uid: 'supplier', name: 'Supplier' },
           { uid: 'status', name: 'Status' },
-          { uid: 'total_price', name: 'Return amount' },
-          { uid: 'items_count', name: 'Quantity' },
-          { uid: 'created_at', name: 'Created' },
+          { uid: 'refund_money', name: 'Reback Money' },
+          { uid: 'refund_qty', name: 'Reback Quantity' },
+          { uid: 'created_at', name: 'Creation Date' },
+          { uid: 'created_by', name: 'Created By' },
         ]}
         items={tableItems as any}
         total={total}
@@ -76,9 +88,13 @@ export default function OrderReturnsPage() {
         onSearchChange={setSearch}
         renderCell={(item: any, key: string) => {
           if (key === 'name') return <button className="text-primary underline-offset-2 hover:underline" onClick={() => navigate(`/products/orders/${item.id}`)}>{item.name}</button>
-          if (key === 'status') return <span className="inline-flex px-2 py-1 rounded-full text-xs bg-success/20 text-success">Returned</span>
-          if (key === 'total_price') return new Intl.NumberFormat('ru-RU').format(Number(item.total_price || 0)) + ' UZS'
-          if (key === 'items_count') return `${item.items_count} pcs`
+          if (key === 'status') {
+            if (item.status === 'Accepted') return <span className="inline-flex px-2 py-1 rounded-full text-xs bg-success/20 text-success">Accepted</span>
+            if (item.status === 'Rejected') return <span className="inline-flex px-2 py-1 rounded-full text-xs bg-danger/20 text-danger">Rejected</span>
+            return <span className="inline-flex px-2 py-1 rounded-full text-xs bg-warning/20 text-warning">In progress</span>
+          }
+          if (key === 'refund_money') return <MoneyAt amount={Number(item.refund_money || 0)} date={item.created_at} />
+          if (key === 'refund_qty') return `${item.refund_qty} pcs`
           return item[key]
         }}
       />
@@ -97,6 +113,8 @@ function CreateReturnModal({ isOpen, onOpenChange, shops, suppliers, onCreated }
   const [shopId, setShopId] = useState('')
   const [name, setName] = useState(`Refund ${new Date().toISOString().slice(0, 16).replace('T', ' ')}`)
   const [comment, setComment] = useState('')
+  const { prefs } = usePreferences()
+  const { format: fmt } = useCurrency()
 
   // Step 2
   const [searchOrder, setSearchOrder] = useState('')
@@ -104,9 +122,15 @@ function CreateReturnModal({ isOpen, onOpenChange, shops, suppliers, onCreated }
   const [selectedOrderId, setSelectedOrderId] = useState('')
 
   useEffect(() => {
+    if (isOpen && step===1) {
+      setShopId(prefs.selectedStoreId || '')
+    }
+  }, [isOpen, step, prefs.selectedStoreId])
+
+  useEffect(() => {
     if (step !== 2) return
     const t = setTimeout(async () => {
-      const res = await ordersService.list({ page: 1, limit: 10, type: 'supplier_order', supplier_id: supplierId || undefined, shop_id: shopId || undefined, search: searchOrder })
+      const res = await ordersService.list({ page: 1, limit: 10, type: 'supplier_order', status_id: 'accepted', supplier_id: supplierId || undefined, shop_id: shopId || undefined, search: searchOrder })
       setOrders(res.items || [])
     }, 300)
     return () => clearTimeout(t)
@@ -122,11 +146,10 @@ function CreateReturnModal({ isOpen, onOpenChange, shops, suppliers, onCreated }
     setSaving(true)
     try {
       const payload: any = { name, supplier_id: supplierId, shop_id: shopId, comment, type: 'return_order', items: [] }
-      if (selectedOrderId) {
-        payload.returned_supplier_order_id = selectedOrderId
-      }
-      await ordersService.create(payload)
+      if (selectedOrderId) { payload.returned_supplier_order_id = selectedOrderId }
+      const created = await ordersService.create(payload)
       onCreated()
+      // navigate to detail page of created return
     } finally { setSaving(false) }
   }
 
@@ -172,7 +195,7 @@ function CreateReturnModal({ isOpen, onOpenChange, shops, suppliers, onCreated }
                   </div>
                 </div>
                 <div className="text-right text-sm text-foreground/80">
-                  <div>Order amount: {new Intl.NumberFormat('ru-RU').format(Number(o.total_price || 0))} UZS</div>
+                  <div>Order amount: <MoneyAt amount={Number(o.total_price || 0)} date={o.created_at as any} /></div>
                   <div>Quantity: {(o.items_count || o.items?.length || 0)} pcs</div>
                 </div>
               </label>

@@ -16,6 +16,7 @@ func (h *ImportHistoryHandler) Register(protected fiber.Router) {
 	grp := protected.Group("/import-history")
 	grp.Get("/products", h.List)
 	grp.Post("/products", h.Create)
+	grp.Get("/products/:id", h.Get)
 }
 
 func (h *ImportHistoryHandler) List(c *fiber.Ctx) error {
@@ -42,4 +43,13 @@ func (h *ImportHistoryHandler) Create(c *fiber.Ctx) error {
 	created, err := h.svc.Create(c.Context(), tenantID.(string), userID, body)
 	if err != nil { return err }
 	return utils.Created(c, created)
+}
+
+func (h *ImportHistoryHandler) Get(c *fiber.Ctx) error {
+	tenantID := c.Locals("tenant_id")
+	if tenantID == nil { return utils.BadRequest("TENANT_REQUIRED", "Tenant required", nil) }
+	id := c.Params("id")
+	res, err := h.svc.Get(c.Context(), tenantID.(string), id)
+	if err != nil { return err }
+	return utils.Success(c, res)
 } 

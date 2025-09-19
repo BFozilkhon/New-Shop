@@ -15,7 +15,7 @@ type Props = {
 
 export default function CustomModal({ isOpen, onOpenChange, title, children, onSubmit, submitLabel = 'Save', isSubmitting, size = 'lg', submitDisabled }: Props) {
   return (
-    <Modal isOpen={isOpen} onOpenChange={onOpenChange} size={size} backdrop="blur" classNames={{ wrapper: 'z-[1100]' }}>
+    <Modal isOpen={isOpen} onOpenChange={onOpenChange} size={size} backdrop="blur" classNames={{ wrapper: 'z-[100000]' }} portalContainer={document.body}>
       <ModalContent>
         {(close) => (
           <>

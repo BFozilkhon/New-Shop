@@ -129,6 +129,7 @@ type OrderItemInput struct {
 	SupplyPrice float64 `json:"supply_price"`
 	RetailPrice float64 `json:"retail_price"`
 	Unit        string  `json:"unit"`
+	ReturnedQuantity int `json:"returned_quantity"`
 }
 
 type OrderStatus struct {
@@ -173,6 +174,7 @@ type CreateOrderRequest struct {
 	TotalPrice       float64          `json:"total_price"`
 	TotalSupplyPrice float64          `json:"total_supply_price"`
 	TotalRetailPrice float64          `json:"total_retail_price"`
+	ReturnedSupplierOrderID string    `json:"returned_supplier_order_id"`
 }
 
 type UpdateOrderRequest struct {

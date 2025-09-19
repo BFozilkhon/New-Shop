@@ -9,12 +9,14 @@ import { Button, Input } from '@heroui/react'
 import ConfirmModal from '../../components/common/ConfirmModal'
 import { BanknotesIcon, CubeIcon, ArrowDownTrayIcon } from '@heroicons/react/24/outline'
 import { useTranslation } from 'react-i18next'
+import useCurrency from '../../hooks/useCurrency'
 
 export default function TransferDetailPage() {
   const navigate = useNavigate()
   const { id } = useParams<{ id: string }>()
   const qc = useQueryClient()
   const { t } = useTranslation()
+  const { format: fmt } = useCurrency()
 
   const { data: doc } = useQuery({ queryKey: ['transfer', id], queryFn: ()=> transfersService.get(id!), enabled: !!id })
 
@@ -24,7 +26,7 @@ export default function TransferDetailPage() {
 
   useEffect(()=> { setItems(doc?.items || []) }, [doc])
 
-  const { data: productPage } = useQuery({ queryKey: ['products-list', term], queryFn: ()=> productsService.list({ page:1, limit:200, search: term }), placeholderData: (p)=> p })
+  const { data: productPage } = useQuery({ queryKey: ['products-list', term], queryFn: ()=> productsService.list({ page:1, limit:200, search: term, exclude_types:['SET','SERVICE'] }), placeholderData: (p)=> p })
   const productRows = useMemo(()=> ((productPage?.items||[]) as any[]).map((p:any)=> {
     const inDoc = (items||[]).find((x:any)=> x.product_id === p.id)
     return {
@@ -84,8 +86,8 @@ export default function TransferDetailPage() {
       case 'product_name':
         return <button className="text-primary underline-offset-2 hover:underline" onClick={()=> navigate(`/products/catalog/${row.product_id}/edit`)}>{row.product_name}</button>
       case 'stock': return Number(row.stock||0)
-      case 'supply_price': return `${Intl.NumberFormat('ru-RU').format(row.supply_price||0)} UZS`
-      case 'retail_price': return `${Intl.NumberFormat('ru-RU').format(row.retail_price||0)} UZS`
+      case 'supply_price': return fmt(Number(row.supply_price||0))
+      case 'retail_price': return fmt(Number(row.retail_price||0))
       case 'qty': {
         const onChange = (v: string) => {
           const val = Number(v||0)
@@ -108,13 +110,13 @@ export default function TransferDetailPage() {
 
   const report = () => {
     const w = window.open('', '_blank')!
-    const fmt = (n:number)=> Intl.NumberFormat('ru-RU').format(n)
+    const fmtNum = (n:number)=> Intl.NumberFormat('ru-RU').format(n)
     const html = `<!DOCTYPE html><html><head><meta charset='UTF-8'/><title>${t('transfer.header')} №${doc?.external_id||''}</title><style>@page{size:A4 portrait;margin:14mm}body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;font-size:12px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #ddd;padding:6px;text-align:left}h1{font-size:18px;margin:0 0 12px}</style></head><body>
       <h1>${t('transfer.header')} №${doc?.external_id||''}</h1>
       <div>${t('transfer.detail.departure')}: ${doc?.departure_shop_name || '-'}</div>
       <div>${t('transfer.detail.arrival')}: ${doc?.arrival_shop_name || '-'}</div>
       <div>${t('transfer.detail.qty_products')}: ${totalQty}</div>
-      <div>${t('transfer.detail.amount')}: ${fmt(totalPrice)} UZS</div>
+      <div>${t('transfer.detail.amount')}: ${fmtNum(totalPrice)} UZS</div>
       <br/>
       <table><thead><tr><th>${t('transfer.detail.table.name')}</th><th>${t('transfer.detail.table.sku')}</th><th>${t('transfer.detail.table.barcode')}</th><th>${t('transfer.detail.table.current')}</th><th>${t('transfer.detail.table.qty')}</th></tr></thead><tbody>
         ${(productRows||[]).map(it=> `<tr><td>${it.product_name}</td><td>${it.product_sku}</td><td>${it.barcode}</td><td>${it.stock||0}</td><td>${it.qty||0}</td></tr>`).join('')}
@@ -162,7 +164,7 @@ export default function TransferDetailPage() {
         <div className="rounded-2xl bg-gray-900 border border-gray-700 p-5 flex items-center justify-between">
           <div>
             <div className="text-sm text-gray-200">{t('transfer.detail.amount')}</div>
-            <div className="mt-2 text-2xl font-semibold tracking-wide"><span className="text-blue-500">{Intl.NumberFormat('ru-RU').format(totalPrice)}</span> <span className="text-gray-300 text-base ml-1">UZS</span></div>
+            <div className="mt-2 text-2xl font-semibold tracking-wide"><span className="text-blue-500">{fmt(totalPrice)}</span></div>
           </div>
           <div className="h-11 w-11 rounded-full bg-gray-800 flex items-center justify-center"><BanknotesIcon className="h-6 w-6 text-blue-500" /></div>
         </div>

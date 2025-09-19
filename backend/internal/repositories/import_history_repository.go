@@ -3,6 +3,7 @@ package repositories
 import (
 	"context"
 	"time"
+	"math/rand"
 	"shop/backend/internal/models"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
@@ -34,8 +35,15 @@ func (r *ImportHistoryRepository) List(ctx context.Context, p ImportHistoryListP
 
 func (r *ImportHistoryRepository) Create(ctx context.Context, m *models.ImportHistory) (*models.ImportHistory, error) {
 	now := time.Now().UTC(); m.CreatedAt = now
+	if m.ExternalID == 0 { m.ExternalID = int64(100000 + rand.Intn(900000)) }
 	res, err := r.col.InsertOne(ctx, m)
 	if err != nil { return nil, err }
 	m.ID = res.InsertedID.(primitive.ObjectID)
 	return m, nil
+}
+
+func (r *ImportHistoryRepository) Get(ctx context.Context, id primitive.ObjectID, tenantID primitive.ObjectID) (*models.ImportHistory, error) {
+	var m models.ImportHistory
+	if err := r.col.FindOne(ctx, bson.M{"_id": id, "tenant_id": tenantID}).Decode(&m); err != nil { return nil, err }
+	return &m, nil
 } 

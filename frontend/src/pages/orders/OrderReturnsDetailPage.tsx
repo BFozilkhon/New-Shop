@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { Tabs, Tab, Input, Button, Dropdown, DropdownMenu, DropdownItem, DropdownTrigger } from '@heroui/react'
+import { Tabs, Tab, Input, Button } from '@heroui/react'
 import CustomMainBody from '../../components/common/CustomMainBody'
+import CustomTable, { CustomColumn } from '../../components/common/CustomTable'
+import ConfirmModal from '../../components/common/ConfirmModal'
 import { ordersService } from '../../services/ordersService'
-import { BanknotesIcon, ArrowPathIcon, ArrowTrendingUpIcon, ShoppingBagIcon, CubeIcon, ChevronDownIcon, MagnifyingGlassIcon } from '@heroicons/react/24/outline'
+import { BanknotesIcon, ArrowPathIcon, CubeIcon } from '@heroicons/react/24/outline'
 
 export default function OrderReturnsDetailPage() {
   const { id } = useParams()
@@ -13,40 +15,91 @@ export default function OrderReturnsDetailPage() {
   const [items, setItems] = useState<any[]>([])
   const [activeTab, setActiveTab] = useState<'products'|'details'>('products')
 
-  const [productQuery, setProductQuery] = useState('')
-  const [productResults, setProductResults] = useState<any[]>([])
-  const [productSearchLoading, setProductSearchLoading] = useState(false)
-  const allColumnKeys = ['name','sku','qty','unit_price','total']
-  const [visibleCols, setVisibleCols] = useState<Set<string>>(new Set(allColumnKeys))
+  // table state
+  const [search, setSearch] = useState('')
+  const [page, setPage] = useState(1)
+  const [limit, setLimit] = useState(10)
 
-  const [currentPage, setCurrentPage] = useState(1)
-  const [itemsPerPage, setItemsPerPage] = useState(10)
-  const paginatedItems = useMemo(()=>{ const start=(currentPage-1)*itemsPerPage; return items.slice(start, start+itemsPerPage) },[items,currentPage,itemsPerPage])
-  const totalPages = Math.max(1, Math.ceil(items.length / Math.max(1, itemsPerPage)))
+  const [confirm, setConfirm] = useState<{ open: boolean; action: 'approve'|'reject'|null }>({ open: false, action: null })
 
   useEffect(()=>{ (async()=>{ try{ setLoading(true); const data = await ordersService.get(String(id)); setOrder(data); setItems(Array.isArray(data?.items)? data.items:[]) } finally{ setLoading(false) } })() },[id])
 
+  // debounced autosave for refund qty
+  const [debounceKey, setDebounceKey] = useState(0)
+  useEffect(()=>{
+    if (!order || !id) return
+    const t = setTimeout(async ()=>{
+      try {
+        const payload:any = { items: (items||[]).map((it:any)=> ({ product_id: it.product_id, product_name: it.product_name, product_sku: it.product_sku, quantity: Number(it.quantity||0), unit_price: Number(it.unit_price||0), supply_price: Number(it.supply_price||0), retail_price: Number(it.retail_price||0), unit: it.unit, returned_quantity: Number(it.returned_quantity||0) })) }
+        await ordersService.update(String(id), payload)
+      } catch {}
+    }, 500)
+    return ()=> clearTimeout(t)
+  }, [debounceKey])
+
+  // stats computed from refund quantities
   const stats = useMemo(()=>{
     const orderAmount = Number(order?.total_price || 0)
-    const goodsCount = Number(order?.items_count || items?.length || 0)
-    const returnAmount = Number(order?.to_return_amount || order?.total_returned_amount || 0)
+    const goodsCount = (items||[]).reduce((sum:number, it:any)=> sum + Number(it.returned_quantity||0), 0)
+    const returnAmount = (items||[]).reduce((sum:number, it:any)=> sum + Number(it.unit_price||0) * Number(it.returned_quantity||0), 0)
     return { orderAmount, goodsCount, returnAmount }
   },[order,items])
 
-  const columnsDropdown = (
-    <Dropdown>
-      <DropdownTrigger className="hidden sm:flex">
-        <Button endContent={<ChevronDownIcon className="h-4 w-4" />} variant="bordered" size="md">Columns</Button>
-      </DropdownTrigger>
-      <DropdownMenu aria-label="Table Columns" disallowEmptySelection closeOnSelect={false} selectionMode="multiple" selectedKeys={visibleCols} onSelectionChange={(keys)=> setVisibleCols(keys as Set<string>)} itemClasses={{ base: 'data-[hover=true]:bg-background/40' }}>
-        <DropdownItem key="name">Name</DropdownItem>
-        <DropdownItem key="sku">SKU</DropdownItem>
-        <DropdownItem key="qty">Qty</DropdownItem>
-        <DropdownItem key="unit_price">Unit price</DropdownItem>
-        <DropdownItem key="total">Total</DropdownItem>
-      </DropdownMenu>
-    </Dropdown>
-  )
+  const columns: CustomColumn[] = useMemo(()=>[
+    { uid:'name', name:'Name', className:'min-w-[240px]' },
+    { uid:'sku', name:'SKU' },
+    { uid:'qty', name:'Qty' },
+    { uid:'refund', name:'Refund Qty' },
+    { uid:'unit_price', name:'Unit price' },
+    { uid:'total', name:'Total' },
+  ],[])
+
+  const filtered = useMemo(()=> (items||[]).filter((it:any)=>{
+    if (!search.trim()) return true
+    const s = search.toLowerCase()
+    return String(it.product_name||'').toLowerCase().includes(s) || String(it.product_sku||'').toLowerCase().includes(s)
+  }), [items, search])
+
+  const tableItems = useMemo(()=> filtered.map((it:any, idx:number)=> ({
+    id: idx+1,
+    name: it.product_name,
+    sku: it.product_sku,
+    qty: it.quantity,
+    refund: it.returned_quantity ?? 0,
+    unit_price: it.unit_price || 0,
+    total: Number(it.unit_price||0) * Number(it.returned_quantity||0),
+    __raw: it,
+  })), [filtered])
+
+  const renderCell = (row:any, key:string) => {
+    if (key==='refund') {
+      if (order?.is_finished) return <span>{row.refund || 0}</span>
+      const max = Number(row.__raw?.quantity||0)
+      return (
+        <Input size="sm" type="number" value={String(row.__raw?.returned_quantity ?? 0)} onValueChange={(v)=>{
+          let n = parseInt(v||'0')
+          if (isNaN(n)) n = 0
+          if (n < 0) n = 0
+          if (n > max) n = max
+          setItems(prev => prev.map((p:any, i:number)=> i+1===row.id ? { ...p, returned_quantity: n } : p))
+          setDebounceKey(k=>k+1)
+        }} classNames={{ inputWrapper:'h-9' }} />
+      )
+    }
+    if (key==='unit_price') return new Intl.NumberFormat('ru-RU').format(Number(row.unit_price||0)) + ' UZS'
+    if (key==='total') return new Intl.NumberFormat('ru-RU').format(Number(row.total||0)) + ' UZS'
+    return row[key]
+  }
+
+  const doAction = async (action:'approve'|'reject') => {
+    if (!id) return
+    const payload:any = (action==='approve') ? { action, items: (items||[]).map((it:any)=> ({ product_id: it.product_id, product_name: it.product_name, product_sku: it.product_sku, quantity: Number(it.quantity||0), unit_price: Number(it.unit_price||0), supply_price: Number(it.supply_price||0), retail_price: Number(it.retail_price||0), unit: it.unit, returned_quantity: Number(it.returned_quantity||0) })) } : { action }
+    await ordersService.update(String(id), payload)
+    const data = await ordersService.get(String(id))
+    setOrder(data)
+    setItems(Array.isArray(data?.items)? data.items:[])
+    setConfirm({ open:false, action:null })
+  }
 
   if (loading) return <CustomMainBody><div className="p-6">Loading...</div></CustomMainBody>
   if (!order) return <CustomMainBody><div className="p-6">Not found</div></CustomMainBody>
@@ -59,51 +112,20 @@ export default function OrderReturnsDetailPage() {
           <div className="text-foreground/60 text-sm">Return • {order?.supplier?.name} • {order?.shop?.name}</div>
         </div>
         <div className="flex gap-2">
+          {!order?.is_finished && (
+            <>
+              <Button color="danger" variant="bordered" onPress={()=> setConfirm({ open:true, action:'reject' })}>Reject</Button>
+              <Button color="success" onPress={()=> setConfirm({ open:true, action:'approve' })}>Accept</Button>
+            </>
+          )}
           <Button variant="bordered" onPress={()=>navigate(-1)}>Back</Button>
         </div>
       </div>
 
       <Tabs aria-label="Order return tabs" color="primary" variant="bordered" selectedKey={activeTab} onSelectionChange={(k)=>setActiveTab(k as any)} className="w-full" classNames={{ tabList: 'w-full h-14', tab: 'h-12' }}>
-        <Tab key="products" title={<div className="flex items-center space-x-2"><span>Products ({items?.length||0})</span></div>}>
-          <div className="mt-4 space-y-4">
-            <div className="flex justify-between gap-3 items-end">
-              <Input isClearable value={productQuery} onValueChange={setProductQuery} onClear={()=>setProductQuery('')} className="w-full sm:max-w-[44%]" classNames={{ inputWrapper: 'h-11 bg-background ring-1 ring-foreground/40 focus-within:ring-foreground/50 rounded-lg', input: 'text-foreground' }} placeholder="SKU, barcode, title" startContent={<MagnifyingGlassIcon className="h-5 w-5 text-foreground/60" />} size="md"/>
-              <div className="flex gap-3 items-center">{columnsDropdown}</div>
-            </div>
-
-            <div className="overflow-auto border rounded-md">
-              <table className="min-w-full divide-y divide-foreground/10">
-                <thead className="bg-background">
-                  <tr>
-                    {visibleCols.has('name') && <th className="px-4 py-2 text-left text-xs">Name</th>}
-                    {visibleCols.has('sku') && <th className="px-4 py-2 text-left text-xs">SKU</th>}
-                    {visibleCols.has('qty') && <th className="px-4 py-2 text-left text-xs">Qty</th>}
-                    {visibleCols.has('unit_price') && <th className="px-4 py-2 text-left text-xs">Unit price</th>}
-                    {visibleCols.has('total') && <th className="px-4 py-2 text-left text-xs">Total</th>}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-foreground/10">
-                  {paginatedItems.map((it,idx)=> (
-                    <tr key={idx}>
-                      {visibleCols.has('name') && <td className="px-4 py-2 text-sm">{it.product_name}</td>}
-                      {visibleCols.has('sku') && <td className="px-4 py-2 text-sm">{it.product_sku}</td>}
-                      {visibleCols.has('qty') && <td className="px-4 py-2 text-sm">{it.quantity||0}</td>}
-                      {visibleCols.has('unit_price') && <td className="px-4 py-2 text-sm">{it.unit_price||0}</td>}
-                      {visibleCols.has('total') && <td className="px-4 py-2 text-sm">{it.total_price||0}</td>}
-                    </tr>
-                  ))}
-                  {!items.length && (<tr><td className="px-4 py-6 text-sm text-foreground/60" colSpan={5}>No items</td></tr>)}
-                </tbody>
-              </table>
-            </div>
-
-            <div className="py-3 px-2 flex justify-between items-center">
-              <span className="w-[30%] text-sm text-foreground/60">Page {currentPage} of {totalPages}</span>
-              <div className="hidden sm:flex w-[30%] justify-end gap-2">
-                <Button isDisabled={totalPages === 1 || currentPage <= 1} size="md" variant="flat" onPress={()=>setCurrentPage(p=>Math.max(1,p-1))}>Previous</Button>
-                <Button isDisabled={totalPages === 1 || currentPage >= totalPages} size="md" variant="flat" onPress={()=>setCurrentPage(p=>Math.min(totalPages,p+1))}>Next</Button>
-              </div>
-            </div>
+        <Tab key="products" title={<div className="flex items-center space-x-2"><span>Products ({items?.length||0})</span></div>}> 
+          <div className="mt-4">
+            <CustomTable columns={columns} items={tableItems} total={tableItems.length} page={page} limit={limit} onPageChange={setPage} onLimitChange={setLimit} searchValue={search} onSearchChange={setSearch} onSearchClear={()=>setSearch('')} renderCell={renderCell} />
           </div>
         </Tab>
         <Tab key="details" title={<div className="flex items-center space-x-2"><span>Details</span></div>}>
@@ -115,12 +137,12 @@ export default function OrderReturnsDetailPage() {
                 <StatCard icon={BanknotesIcon} title="Order amount" value={formatCurrency(stats.orderAmount)} />
                 <div className="rounded-2xl bg-gray-900 border border-gray-700 p-5 flex items-center justify-between">
                   <div>
-                    <div className="text-sm text-gray-200">Items count</div>
+                    <div className="text-sm text-gray-200">Refund units</div>
                     <div className="mt-2 text-2xl font-semibold tracking-wide"><span className="text-blue-500">{stats.goodsCount}</span> <span className="text-gray-400 text-base ml-1">pcs</span></div>
                   </div>
                   <div className="h-11 w-11 rounded-full bg-gray-800 flex items-center justify-center"><CubeIcon className="h-6 w-6 text-blue-500" /></div>
                 </div>
-                <StatCard icon={ArrowPathIcon} title="Return amount" value={formatCurrency(stats.returnAmount)} />
+                <StatCard icon={ArrowPathIcon} title="Refund amount" value={formatCurrency(stats.returnAmount)} />
               </div>
             </div>
             <div className="border-t border-dashed border-gray-300" />
@@ -139,6 +161,8 @@ export default function OrderReturnsDetailPage() {
           </div>
         </Tab>
       </Tabs>
+
+      <ConfirmModal isOpen={confirm.open} title={confirm.action==='approve'?'Accept return':'Reject return'} description={confirm.action==='approve'?'Are you sure you want to accept this return?':'Are you sure you want to reject this return?'} onClose={()=> setConfirm({ open:false, action:null })} onConfirm={()=> confirm.action ? doAction(confirm.action) : null} confirmText={confirm.action==='approve'?'Accept':'Reject'} confirmColor={confirm.action==='approve'?'success':'danger'} />
     </CustomMainBody>
   )
 }

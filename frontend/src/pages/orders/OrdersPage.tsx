@@ -9,6 +9,8 @@ import { useTranslation } from 'react-i18next'
 import { usePreferences } from '../../store/prefs'
 import { useDateFormatter } from '../../hooks/useDateFormatter'
 import ConfirmModal from '../../components/common/ConfirmModal'
+import useCurrency from '../../hooks/useCurrency'
+import MoneyAt from '../../components/common/MoneyAt'
 
 export default function OrdersPage() {
   const { t } = useTranslation()
@@ -28,6 +30,7 @@ export default function OrdersPage() {
   const [search, setSearch] = useState('')
   const { prefs } = usePreferences()
   const [confirm, setConfirm] = useState<{ open: boolean; id?: string }>({ open: false })
+  const { format: fmt } = useCurrency()
 
   useEffect(()=>{ ordersService.getShops().then(setShops).catch(()=>setShops([])); ordersService.getSuppliers().then(setSuppliers).catch(()=>setSuppliers([])) },[])
 
@@ -41,7 +44,7 @@ export default function OrdersPage() {
   }
   useEffect(()=>{ load() }, [currentTab, page, limit, search, prefs.selectedStoreId])
 
-  const columns: CustomColumn[] = useMemo(()=> ([
+  const orderColumns: CustomColumn[] = useMemo(()=> ([
     { uid: 'external_id', name: 'ID', className: 'w-[100px] min-w-[100px]' },
     { uid: 'name', name: t('orders.table.name'), className: 'min-w-[200px]' },
     { uid: 'supplier', name: t('orders.table.supplier'), className: 'min-w-[160px]' },
@@ -58,39 +61,76 @@ export default function OrdersPage() {
     { uid: 'actions', name: t('common.actions'), className: 'min-w-[120px]' },
   ]), [t])
 
-  const tableItems = useMemo(()=> (items||[]).map(o=>{
-    const orderSupply = Number(o.total_supply_price || 0)
-    const computedSupply = (o.items || []).reduce((s:any,it:any)=> s + Number(it?.supply_price||it?.unit_price||0) * Number(it?.quantity||0), 0)
-    const total = orderSupply > 0 ? orderSupply : computedSupply
-    const orderRetail = Number(o.total_retail_price || 0)
-    const computedRetail = (o.items || []).reduce((s:any,it:any)=> s + Number(it?.retail_price||it?.unit_price||0) * Number(it?.quantity||0), 0)
-    const retail = orderRetail > 0 ? orderRetail : computedRetail
-    const paid = Number(o.total_paid_amount || 0)
-    const debt = Math.max(0, total - paid)
-    const qtyOrdered = Number(o.items_count || (o.items?.reduce((s:any,it:any)=> s + Number(it?.quantity||0),0) || 0))
-    const qtyAccepted = Number((o as any).total_accepted_measurement_value || 0)
-    const isAccepted = String(o.status_id||'').toLowerCase()==='accepted' || (!!o.is_finished && String(o.status_id||'').trim()==='')
-    const status = isAccepted ? 'Accepted' : (String(o.status_id||'').toLowerCase()==='rejected' ? 'Rejected' : 'In progress')
-    const progress = Number(o.sale_progress || (total>0 ? Math.round((paid/total)*100) : 0))
-    const numericId = o.external_id || parseInt(String(o.id||'').slice(-6), 16)
-    return {
-      id: o.id,
-      external_id: numericId,
-      name: o.name,
-      supplier: o.supplier?.name || '-',
-      shop: o.shop?.name || '-',
-      status,
-      payment: `${new Intl.NumberFormat('ru-RU').format(paid)} UZS / ${new Intl.NumberFormat('ru-RU').format(debt)} UZS`,
-      qty: `${qtyOrdered}${qtyAccepted? ` / ${qtyAccepted}`:''}`,
-      amounts: `${new Intl.NumberFormat('ru-RU').format(total)} UZS • ${new Intl.NumberFormat('ru-RU').format(retail)} UZS`,
-      created_at: o.created_at,
-      shipment: (o as any).payment_date || '-',
-      created_by: o.created_by?.name || '-',
-      accepted_by: o.accepted_by?.name || '-',
-      progress,
-      raw: o,
+  const returnsColumns: CustomColumn[] = useMemo(()=> ([
+    { uid: 'external_id', name: 'ID', className: 'w-[100px] min-w-[100px]' },
+    { uid: 'name', name: 'Name', className: 'min-w-[200px]' },
+    { uid: 'shop', name: 'Store', className: 'min-w-[160px]' },
+    { uid: 'supplier', name: 'Supplier', className: 'min-w-[160px]' },
+    { uid: 'status', name: 'Status', className: 'min-w-[120px]' },
+    { uid: 'refund_money', name: 'Reback Money', className: 'min-w-[160px]' },
+    { uid: 'refund_qty', name: 'Reback Quantity', className: 'w-[160px]' },
+    { uid: 'created_at', name: 'Creation Date', className: 'min-w-[180px]' },
+    { uid: 'created_by', name: 'Created By', className: 'min-w-[160px]' },
+  ]), [])
+
+  const tableItems = useMemo(()=> {
+    if (currentTab === 'orders') {
+      return (items||[]).map(o=>{
+        const orderSupply = Number(o.total_supply_price || 0)
+        const computedSupply = (o.items || []).reduce((s:any,it:any)=> s + Number(it?.supply_price||it?.unit_price||0) * Number(it?.quantity||0), 0)
+        const total = orderSupply > 0 ? orderSupply : computedSupply
+        const orderRetail = Number(o.total_retail_price || 0)
+        const computedRetail = (o.items || []).reduce((s:any,it:any)=> s + Number(it?.retail_price||it?.unit_price||0) * Number(it?.quantity||0), 0)
+        const retail = orderRetail > 0 ? orderRetail : computedRetail
+        const paid = Number(o.total_paid_amount || 0)
+        const debt = Math.max(0, total - paid)
+        const qtyOrdered = Number(o.items_count || (o.items?.reduce((s:any,it:any)=> s + Number(it?.quantity||0),0) || 0))
+        const qtyAccepted = Number((o as any).total_accepted_measurement_value || 0)
+        const isAccepted = String(o.status_id||'').toLowerCase()==='accepted' || (!!o.is_finished && String(o.status_id||'').trim()==='')
+        const status = isAccepted ? 'Accepted' : (String(o.status_id||'').toLowerCase()==='rejected' ? 'Rejected' : 'In progress')
+        const progress = Number(o.sale_progress || (total>0 ? Math.round((paid/total)*100) : 0))
+        const numericId = o.external_id || parseInt(String(o.id||'').slice(-6), 16)
+        return {
+          id: o.id,
+          external_id: numericId,
+          name: o.name,
+          supplier: o.supplier?.name || '-',
+          shop: o.shop?.name || '-',
+          status,
+          payment: { paid, debt, date: o.created_at },
+          qty: `${qtyOrdered}${qtyAccepted? ` / ${qtyAccepted}`:''}`,
+          amounts: { supply: total, retail, date: o.created_at },
+          created_at: o.created_at,
+          shipment: (o as any).payment_date || '-',
+          created_by: o.created_by?.name || '-',
+          accepted_by: o.accepted_by?.name || '-',
+          progress,
+          raw: o,
+        }
+      })
     }
-  }), [items])
+    // returns
+    return (items||[]).map(o=>{
+      const refundQty = (o.items || []).reduce((sum:number, it:any)=> sum + Number((it as any).returned_quantity||0), 0)
+      const refundMoney = (o.items || []).reduce((sum:number, it:any)=> sum + Number((it as any).returned_quantity||0) * Number((it as any).unit_price||0), 0)
+      const isAccepted = String(o.status_id||'').toLowerCase()==='accepted' || (!!o.is_finished && String(o.status_id||'').trim()==='')
+      const status = isAccepted ? 'Accepted' : (String(o.status_id||'').toLowerCase()==='rejected' ? 'Rejected' : 'In progress')
+      const numericId = o.external_id || parseInt(String(o.id||'').slice(-6), 16)
+      return {
+        id: o.id,
+        external_id: numericId,
+        name: o.name,
+        shop: o.shop?.name || '-',
+        supplier: o.supplier?.name || '-',
+        status,
+        refund_money: refundMoney,
+        refund_qty: refundQty,
+        created_at: o.created_at,
+        created_by: o.created_by?.name || '-',
+        raw: o,
+      }
+    })
+  }, [items, currentTab, fmt])
 
   const handleTabChange = (key: string) => { setSearchParams({ tab: key }) }
 
@@ -105,28 +145,29 @@ export default function OrdersPage() {
         return <span className={`px-2 py-1 rounded-full text-xs ${cls}`}>{label}</span>
       }
       case 'payment': {
-        const [paidStr, debtStr] = String(item.payment).split(' / ')
+        const d = item.payment?.date as string
         return (
           <Tooltip content={t('orders.table.payment')} placement="top" closeDelay={0}>
             <div className="flex flex-col gap-1">
-              <div className="flex items-center gap-2 text-success"><span className="inline-block h-2 w-2 rounded-full bg-success"></span><span className="font-medium">{paidStr}</span></div>
-              <div className="flex items-center gap-2 text-danger"><span className="inline-block h-2 w-2 rounded-full bg-danger"></span><span className="font-medium">{debtStr}</span></div>
+              <div className="flex items-center gap-2 text-success"><span className="inline-block h-2 w-2 rounded-full bg-success"></span><span className="font-medium"><MoneyAt amount={Number(item.payment?.paid||0)} date={d} /></span></div>
+              <div className="flex items-center gap-2 text-danger"><span className="inline-block h-2 w-2 rounded-full bg-danger"></span><span className="font-medium"><MoneyAt amount={Number(item.payment?.debt||0)} date={d} /></span></div>
             </div>
           </Tooltip>
         )
       }
       case 'amounts': {
-        const [supply, retailVal] = String(item.amounts).split(' • ')
-     
+        const d = item.amounts?.date as string
         return (
           <Tooltip content={<div className="text-left"><div>{t('orders.table.amount_supply')}</div><div>{t('orders.table.amount_retail')}</div></div>} placement="top" closeDelay={0}>
             <div className="flex flex-col gap-1">
-              <div className="flex items-center gap-2 text-warning"><span className="inline-block h-2 w-2 rounded-full bg-warning"></span><span className="font-medium"> {supply}</span></div>
-              <div className="flex items-center gap-2 text-primary"><span className="inline-block h-2 w-2 rounded-full bg-primary"></span><span className="font-medium"> {retailVal}</span></div>
+              <div className="flex items-center gap-2 text-warning"><span className="inline-block h-2 w-2 rounded-full bg-warning"></span><span className="font-medium"> <MoneyAt amount={Number(item.amounts?.supply||0)} date={d} /></span></div>
+              <div className="flex items-center gap-2 text-primary"><span className="inline-block h-2 w-2 rounded-full bg-primary"></span><span className="font-medium"> <MoneyAt amount={Number(item.amounts?.retail||0)} date={d} /></span></div>
             </div>
           </Tooltip>
         )
       }
+      case 'refund_money': return <MoneyAt amount={Number(item.refund_money || 0)} date={item.created_at} />
+      case 'refund_qty': return `${item.refund_qty} pcs`
       case 'created_at': return <span>{format(item.created_at, { withTime: true })}</span>
       case 'progress': return (
         <div className="flex items-center gap-2 w-40"><div className="h-2 bg-default-200 rounded w-full overflow-hidden"><div className="h-full bg-primary" style={{ width: `${Math.min(100, Math.max(0, item.progress))}%` }} /></div><span className="text-xs text-foreground/60">{Math.min(100, Math.max(0, item.progress))}%</span></div>
@@ -134,6 +175,7 @@ export default function OrdersPage() {
       case 'actions': {
         const status = String(item.raw?.status_id||'').toLowerCase()
         const isAccepted = status==='accepted' || (!!item.raw?.is_finished && !status)
+        if (currentTab==='returns') return null
         if (isAccepted) return null
         return (
           <Dropdown>
@@ -166,7 +208,7 @@ export default function OrdersPage() {
           <Tab key="orders" title={<div className="flex items-center space-x-2"><span>{t('orders.tabs.orders')}</span></div>}>
             <div className="mt-4">
               <CustomTable
-                columns={columns}
+                columns={orderColumns}
                 items={tableItems as any}
                 total={total}
                 page={page}
@@ -184,7 +226,7 @@ export default function OrdersPage() {
           <Tab key="returns" title={<div className="flex items-center space-x-2"><span>{t('orders.tabs.returns')}</span></div>}>
             <div className="mt-4">
               <CustomTable
-                columns={columns}
+                columns={returnsColumns}
                 items={tableItems as any}
                 total={total}
                 page={page}
@@ -212,7 +254,7 @@ export default function OrdersPage() {
         confirmText={t('common.delete')}
         confirmColor="danger"
         onConfirm={async ()=> { if (confirm.id) { await ordersService.remove(confirm.id); await load(); } setConfirm({ open:false }) }}
-        onClose={()=> setConfirm({ open:false })}
+        onClose={()=> setConfirm({ open:false }) }
       />
     </CustomMainBody>
   )
@@ -224,6 +266,12 @@ function OrderCreateModal({ isOpen, onOpenChange, shops, suppliers, onCreated }:
   const [supplierId, setSupplierId] = useState('')
   const [shopId, setShopId] = useState('')
   const [name, setName] = useState(`Order ${new Date().toISOString().slice(0,16).replace('T',' ')}`)
+  const { prefs } = usePreferences()
+
+  useEffect(()=>{
+    if (isOpen) setShopId(prefs.selectedStoreId || '')
+  }, [isOpen, prefs.selectedStoreId])
+
   const submit = async () => {
     if (!supplierId || !shopId) return
     setSaving(true)
@@ -256,6 +304,14 @@ function ReturnCreateModal({ isOpen, onOpenChange, shops, suppliers, onCreated }
   const [shopId, setShopId] = useState('')
   const [name, setName] = useState(`Refund ${new Date().toISOString().slice(0,16).replace('T',' ')}`)
   const [comment, setComment] = useState('')
+  const { prefs } = usePreferences()
+  const { format: fmt } = useCurrency()
+
+  useEffect(()=>{
+    if (isOpen && step===1) {
+      setShopId(prefs.selectedStoreId || '')
+    }
+  }, [isOpen, step, prefs.selectedStoreId])
 
   const [searchOrder, setSearchOrder] = useState('')
   const [orders, setOrders] = useState<Order[]>([])
@@ -264,7 +320,7 @@ function ReturnCreateModal({ isOpen, onOpenChange, shops, suppliers, onCreated }
   useEffect(()=>{
     if (step !== 2) return
     const tmr = setTimeout(async ()=>{
-      const res = await ordersService.list({ page:1, limit:10, type: 'supplier_order', supplier_id: supplierId||undefined, shop_id: shopId||undefined, search: searchOrder })
+      const res = await ordersService.list({ page:1, limit:10, type: 'supplier_order', status_id: 'accepted', supplier_id: supplierId||undefined, shop_id: shopId||undefined, search: searchOrder })
       setOrders(res.items || [])
     }, 300)
     return ()=>clearTimeout(tmr)
@@ -328,7 +384,7 @@ function ReturnCreateModal({ isOpen, onOpenChange, shops, suppliers, onCreated }
                   </div>
                 </div>
                 <div className="text-right text-sm text-foreground/80">
-                  <div>{t('orders.modal.order_amount')}: {new Intl.NumberFormat('ru-RU').format(Number(o.total_price || 0))} UZS</div>
+                  <div>{t('orders.modal.order_amount')}: {fmt(Number(o.total_price || 0))}</div>
                   <div>{t('orders.modal.quantity')}: {(o.items_count || o.items?.length || 0)} {t('orders.modal.pcs')}</div>
                 </div>
               </label>

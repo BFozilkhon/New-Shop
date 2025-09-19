@@ -100,8 +100,10 @@ func EnsureIndexes(ctx context.Context, db *mongo.Database) error {
 	if err != nil { return err }
 	
 	products := db.Collection("products")
+	// Replace strict unique (tenant_id, sku) with partial unique that ignores variant docs
+	_, _ = products.Indexes().DropOne(ctx, "ux_products_tenant_sku")
 	_, err = products.Indexes().CreateMany(ctx, []mongo.IndexModel{
-		{ Keys: bson.D{{Key: "tenant_id", Value: 1}, {Key: "sku", Value: 1}}, Options: options.Index().SetUnique(true).SetName("ux_products_tenant_sku") },
+		{ Keys: bson.D{{Key: "tenant_id", Value: 1}, {Key: "sku", Value: 1}}, Options: options.Index().SetUnique(true).SetName("ux_products_tenant_sku").SetPartialFilterExpression(bson.M{"is_variant": false}) },
 		{ Keys: bson.D{{Key: "tenant_id", Value: 1}, {Key: "name", Value: 1}}, Options: options.Index().SetName("ix_products_tenant_name") },
 		{ Keys: bson.D{{Key: "tenant_id", Value: 1}, {Key: "category_id", Value: 1}}, Options: options.Index().SetName("ix_products_tenant_category") },
 		{ Keys: bson.D{{Key: "tenant_id", Value: 1}, {Key: "category_ids", Value: 1}}, Options: options.Index().SetName("ix_products_tenant_category_ids") },
@@ -123,7 +125,7 @@ func EnsureIndexes(ctx context.Context, db *mongo.Database) error {
 		{ Keys: bson.D{{Key: "tenant_id", Value: 1}, {Key: "created_at", Value: -1}}, Options: options.Index().SetName("ix_customers_tenant_createdat") },
 	})
 	if err != nil { return err }
-
+	
 	orders := db.Collection("orders")
 	_, err = orders.Indexes().CreateMany(ctx, []mongo.IndexModel{
 		{ Keys: bson.D{{Key: "tenant_id", Value: 1}, {Key: "created_at", Value: -1}}, Options: options.Index().SetName("ix_orders_tenant_createdat") },
@@ -132,7 +134,7 @@ func EnsureIndexes(ctx context.Context, db *mongo.Database) error {
 		{ Keys: bson.D{{Key: "tenant_id", Value: 1}, {Key: "shop_id", Value: 1}}, Options: options.Index().SetName("ix_orders_tenant_shop") },
 	})
 	if err != nil { return err }
-
+	
 	// inventories
 	inventories := db.Collection("inventories")
 	_, err = inventories.Indexes().CreateMany(ctx, []mongo.IndexModel{
@@ -141,7 +143,7 @@ func EnsureIndexes(ctx context.Context, db *mongo.Database) error {
 		{ Keys: bson.D{{Key: "tenant_id", Value: 1}, {Key: "shop_id", Value: 1}}, Options: options.Index().SetName("ix_inventories_tenant_shop") },
 	})
 	if err != nil { return err }
-
+	
 	// writeoffs
 	writeoffs := db.Collection("writeoffs")
 	_, err = writeoffs.Indexes().CreateMany(ctx, []mongo.IndexModel{
@@ -150,7 +152,7 @@ func EnsureIndexes(ctx context.Context, db *mongo.Database) error {
 		{ Keys: bson.D{{Key: "tenant_id", Value: 1}, {Key: "shop_id", Value: 1}}, Options: options.Index().SetName("ix_writeoffs_tenant_shop") },
 	})
 	if err != nil { return err }
-
+	
 	// repricings
 	repricings := db.Collection("repricings")
 	_, err = repricings.Indexes().CreateMany(ctx, []mongo.IndexModel{
@@ -159,7 +161,7 @@ func EnsureIndexes(ctx context.Context, db *mongo.Database) error {
 		{ Keys: bson.D{{Key: "tenant_id", Value: 1}, {Key: "shop_id", Value: 1}}, Options: options.Index().SetName("ix_repricing_tenant_shop") },
 	})
 	if err != nil { return err }
-
+	
 	// transfers
 	transfers := db.Collection("transfers")
 	_, err = transfers.Indexes().CreateMany(ctx, []mongo.IndexModel{
@@ -169,7 +171,7 @@ func EnsureIndexes(ctx context.Context, db *mongo.Database) error {
 		{ Keys: bson.D{{Key: "tenant_id", Value: 1}, {Key: "arrival_shop_id", Value: 1}}, Options: options.Index().SetName("ix_transfers_tenant_arrival") },
 	})
 	if err != nil { return err }
-
+	
 	// price tag templates
 	pt := db.Collection("price_tag_templates")
 	_, err = pt.Indexes().CreateMany(ctx, []mongo.IndexModel{
@@ -177,7 +179,7 @@ func EnsureIndexes(ctx context.Context, db *mongo.Database) error {
 		{ Keys: bson.D{{Key: "tenant_id", Value: 1}, {Key: "created_at", Value: -1}}, Options: options.Index().SetName("ix_pricetags_tenant_createdat") },
 	})
 	if err != nil { return err }
-
+	
 	// shop_customers
 	shopCustomers := db.Collection("shop_customers")
 	_, err = shopCustomers.Indexes().CreateMany(ctx, []mongo.IndexModel{
@@ -187,7 +189,7 @@ func EnsureIndexes(ctx context.Context, db *mongo.Database) error {
 		{ Keys: bson.D{{Key: "tenant_id", Value: 1}, {Key: "created_at", Value: -1}}, Options: options.Index().SetName("ix_shopcustomers_tenant_createdat") },
 	})
 	if err != nil { return err }
-
+	
 	// shop_contacts
 	shopContacts := db.Collection("shop_contacts")
 	_, err = shopContacts.Indexes().CreateMany(ctx, []mongo.IndexModel{
@@ -196,7 +198,7 @@ func EnsureIndexes(ctx context.Context, db *mongo.Database) error {
 		{ Keys: bson.D{{Key: "tenant_id", Value: 1}, {Key: "phone", Value: 1}}, Options: options.Index().SetName("ix_shopcontacts_tenant_phone") },
 	})
 	if err != nil { return err }
-
+	
 	// shop_units
 	shopUnits := db.Collection("shop_units")
 	_, err = shopUnits.Indexes().CreateMany(ctx, []mongo.IndexModel{
@@ -205,7 +207,7 @@ func EnsureIndexes(ctx context.Context, db *mongo.Database) error {
 		{ Keys: bson.D{{Key: "tenant_id", Value: 1}, {Key: "unit_number", Value: 1}}, Options: options.Index().SetName("ix_shopunits_tenant_unitnumber") },
 	})
 	if err != nil { return err }
-
+	
 	// shop_vendors
 	shopVendors := db.Collection("shop_vendors")
 	_, err = shopVendors.Indexes().CreateMany(ctx, []mongo.IndexModel{
@@ -215,7 +217,7 @@ func EnsureIndexes(ctx context.Context, db *mongo.Database) error {
 		{ Keys: bson.D{{Key: "tenant_id", Value: 1}, {Key: "created_at", Value: -1}}, Options: options.Index().SetName("ix_shopvendors_tenant_createdat") },
 	})
 	if err != nil { return err }
-
+	
 	// shop_services
 	shopServices := db.Collection("shop_services")
 	_, err = shopServices.Indexes().CreateMany(ctx, []mongo.IndexModel{
@@ -223,18 +225,26 @@ func EnsureIndexes(ctx context.Context, db *mongo.Database) error {
 		{ Keys: bson.D{{Key: "tenant_id", Value: 1}, {Key: "estimate_number", Value: 1}}, Options: options.Index().SetName("ix_shopservices_tenant_estimate") },
 	})
 	if err != nil { return err }
-
+	
 	// import_history
 	importHistory := db.Collection("import_history")
 	_, err = importHistory.Indexes().CreateMany(ctx, []mongo.IndexModel{
 		{ Keys: bson.D{{Key: "tenant_id", Value: 1}, {Key: "created_at", Value: -1}}, Options: options.Index().SetName("ix_importhistory_tenant_createdat") },
 	})
 	if err != nil { return err }
-
+	
 	// payments (global)
 	payments := db.Collection("payments")
 	_, err = payments.Indexes().CreateMany(ctx, []mongo.IndexModel{
 		{ Keys: bson.D{{Key: "tenant_id", Value: 1}, {Key: "created_at", Value: -1}}, Options: options.Index().SetName("ix_payments_tenant_createdat") },
+	})
+	if err != nil { return err }
+
+	// exchange_rates (tenant-scoped)
+	ex := db.Collection("exchange_rates")
+	_, err = ex.Indexes().CreateMany(ctx, []mongo.IndexModel{
+		{ Keys: bson.D{{Key: "tenant_id", Value: 1}, {Key: "start_at", Value: -1}}, Options: options.Index().SetName("ix_rates_tenant_start") },
+		{ Keys: bson.D{{Key: "tenant_id", Value: 1}, {Key: "end_at", Value: -1}}, Options: options.Index().SetName("ix_rates_tenant_end") },
 	})
 	if err != nil { return err }
 

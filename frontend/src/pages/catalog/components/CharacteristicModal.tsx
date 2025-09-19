@@ -13,6 +13,7 @@ type Props = {
   characteristic?: Characteristic
   onClose: () => void
   onSuccess: () => void
+  prefillOption?: string
 }
 
 const CHARACTERISTIC_TYPES = [
@@ -22,7 +23,7 @@ const CHARACTERISTIC_TYPES = [
   { key: 'boolean', labelKey: 'catalog.characteristics.types.boolean' },
 ]
 
-export default function CharacteristicModal({ isOpen, mode, characteristic, onClose, onSuccess }: Props) {
+export default function CharacteristicModal({ isOpen, mode, characteristic, onClose, onSuccess, prefillOption }: Props) {
   const { t } = useTranslation()
   const [name, setName] = useState('')
   const [type, setType] = useState('select')
@@ -56,7 +57,7 @@ export default function CharacteristicModal({ isOpen, mode, characteristic, onCl
     setName('')
     setType('select')
     setIsActive(true)
-    setValues([''])
+    setValues([prefillOption || ''])
   }
 
   useEffect(() => {
@@ -64,11 +65,16 @@ export default function CharacteristicModal({ isOpen, mode, characteristic, onCl
       setName(characteristic.name)
       setType(characteristic.type)
       setIsActive(characteristic.is_active)
-      setValues(characteristic.values?.length ? characteristic.values : [''])
+      const base = (characteristic.values?.length ? characteristic.values : ['']) as string[]
+      if (characteristic.type === 'select' && prefillOption && !base.includes(prefillOption)) {
+        setValues([...base, prefillOption])
+      } else {
+        setValues(base)
+      }
     } else if (isOpen && mode === 'create') {
       resetForm()
     }
-  }, [isOpen, mode, characteristic])
+  }, [isOpen, mode, characteristic, prefillOption])
 
   const handleSubmit = () => {
     if (!name.trim()) {

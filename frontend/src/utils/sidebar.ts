@@ -102,6 +102,7 @@ export const SIDEBAR_SECTIONS: SidebarSection[] = [
       { key: 'stores', label: 'Stores', to: '/settings/stores' },
       { key: 'integrations', label: 'Integrations', to: '/settings/integrations' },
       { key: 'pricetags', label: 'Price Tags', to: '/settings/pricetags' },
+      { key: 'exchange-rates', label: 'Exchange Rate History', to: '/settings/exchange-rates' },
     ]
   },
 ] 

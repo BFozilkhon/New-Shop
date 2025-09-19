@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useEffect } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import CustomMainBody from '../../components/common/CustomMainBody'
 import CustomTable, { CustomColumn } from '../../components/common/CustomTable'
@@ -10,6 +10,7 @@ import ConfirmModal from '../../components/common/ConfirmModal'
 import { useTranslation } from 'react-i18next'
 import { usePreferences } from '../../store/prefs'
 import { useDateFormatter } from '../../hooks/useDateFormatter'
+import useCurrency from '../../hooks/useCurrency'
 
 function CreateInventoryModal({ isOpen, onOpenChange }: { isOpen: boolean; onOpenChange: (v:boolean)=>void }) {
   const { t } = useTranslation()
@@ -19,6 +20,15 @@ function CreateInventoryModal({ isOpen, onOpenChange }: { isOpen: boolean; onOpe
   const [type, setType] = useState<'FULL'|'PARTIAL'>('FULL')
   const stores = useQuery({ queryKey:['stores','all'], queryFn: ()=> storesService.list({ page:1, limit:200 }) })
   const storeItems = useMemo(()=> (stores.data?.items||[]).map((s:any)=> ({ key:s.id, label:s.title })), [stores.data])
+  const { prefs } = usePreferences()
+
+  useEffect(()=>{
+    if (isOpen) {
+      if (prefs.selectedStoreId) setShopId(prev=> prev || (prefs.selectedStoreId as string))
+      else setShopId('')
+    }
+  }, [isOpen, prefs.selectedStoreId])
+
   const create = async () => {
     const created = await inventoriesService.create({ name, shop_id: shopId, type })
     onOpenChange(false)
@@ -67,6 +77,7 @@ export default function InventoryPage() {
   const [confirm, setConfirm] = useState<{ open: boolean; id?: string; name?: string }>({ open: false })
   const { prefs } = usePreferences()
   const { format } = useDateFormatter()
+  const { format: fmt } = useCurrency()
 
   const { data, isLoading } = useQuery({
     queryKey: ['inventories', page, limit, search, prefs.selectedStoreId||'__ALL__'],
@@ -144,7 +155,7 @@ export default function InventoryPage() {
       case 'difference_sum': {
         const val = Number(row.difference_sum || 0)
         const cls = val > 0 ? 'text-success-600' : val < 0 ? 'text-danger-600' : 'text-foreground/60'
-        return <span className={cls}>{Intl.NumberFormat('ru-RU').format(val)} UZS</span>
+        return <span className={cls}>{fmt(val)}</span>
       }
       case 'created_at':
         return <span>{format(row.created_at, { withTime: true })}</span>

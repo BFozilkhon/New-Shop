@@ -4,7 +4,7 @@ import { categoriesService, Category } from '../../../services/categoriesService
 import CustomTable, { CustomColumn } from '../../../components/common/CustomTable'
 import { useSearchParams } from 'react-router-dom'
 import { Button, Chip, Dropdown, DropdownItem, DropdownMenu, DropdownTrigger } from '@heroui/react'
-import { EllipsisVerticalIcon, PencilSquareIcon, ChevronDownIcon, ChevronRightIcon } from '@heroicons/react/24/outline'
+import { EllipsisVerticalIcon, PencilSquareIcon, ChevronDownIcon, ChevronRightIcon, TrashIcon } from '@heroicons/react/24/outline'
 import ConfirmModal from '../../../components/common/ConfirmModal'
 import CategoryModal from './CategoryModal'
 import { toast } from 'react-toastify'
@@ -23,6 +23,7 @@ export default function CategoriesTab() {
   
   const [confirm, setConfirm] = useState<{ open: boolean; id?: string; name?: string }>({ open: false })
   const [categoryModal, setCategoryModal] = useState<{ open: boolean; mode: 'create' | 'edit' | 'view'; category?: Category }>({ open: false, mode: 'create' })
+  const [focusId, setFocusId] = useState<string | undefined>(undefined)
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
 
   const { data: tree, isLoading } = useQuery({ queryKey: ['categories','tree'], queryFn: () => categoriesService.getTree() })
@@ -82,19 +83,19 @@ export default function CategoriesTab() {
             ) : <span className="w-5" />}
             <span>{item.name}</span>
           </div>
-        )
-      }
+        )}
       case 'status':
         return (<Chip className="capitalize border-none gap-1 text-default-600" color={item.status === t('catalog.common.active') ? 'success' : 'danger'} size="sm" variant="dot">{item.status}</Chip>)
       case 'actions': {
-        if (item.depth > 0) return null // actions only for root rows
         const node = item.raw as Category
-        const actions = [] as any[]
-        if (can('products.categories.update')) {
-          actions.push(
-            <DropdownItem key="edit" startContent={<PencilSquareIcon className="w-4 h-4" />} onPress={() => setCategoryModal({ open: true, mode: 'edit', category: node })}>{t('common.edit')}</DropdownItem>
-          )
-        }
+        const canEdit = can('products.categories.update')
+        const canDelete = can('products.categories.delete') || true
+        const menu = [] as any[]
+        const parentMap: Record<string,string|undefined> = (()=>{ const m:Record<string,string|undefined>={}; const walk=(ns:Category[],p?:string)=>{for(const n of ns||[]){m[n.id]=p; walk(n.children||[], n.id)}}; walk(tree||[]); return m })()
+        const findNode=(ns:Category[]|undefined,id:string):Category|undefined=>{ for(const n of ns||[]){ if(n.id===id) return n; const h=findNode(n.children,id); if(h) return h } return undefined }
+        const rootFor=(id:string):Category|undefined=>{ let cur=id,root=id; while(parentMap[cur!]){ root=parentMap[cur!] as string; cur=parentMap[cur!] as string } return findNode(tree,root) }
+        if (canEdit) menu.push(<DropdownItem key="edit" startContent={<PencilSquareIcon className="w-4 h-4" />} onPress={() => { setFocusId(node.id); setCategoryModal({ open: true, mode: 'edit', category: rootFor(node.id) || node, }) }}>{t('common.edit')}</DropdownItem>)
+        if (canDelete) menu.push(<DropdownItem key="delete" color="danger" startContent={<TrashIcon className="w-4 h-4" />} onPress={() => setConfirm({ open: true, id: node.id, name: node.name })}>{t('common.delete')}</DropdownItem>)
         return (
           <Dropdown placement="bottom-end">
             <DropdownTrigger>
@@ -102,7 +103,7 @@ export default function CategoriesTab() {
                 <EllipsisVerticalIcon className="w-5 h-5" />
               </Button>
             </DropdownTrigger>
-            <DropdownMenu aria-label="Actions">{actions}</DropdownMenu>
+            <DropdownMenu aria-label="Actions">{menu}</DropdownMenu>
           </Dropdown>
         )
       }
@@ -145,8 +146,9 @@ export default function CategoriesTab() {
         isOpen={categoryModal.open}
         mode={categoryModal.mode}
         category={categoryModal.category}
-        onClose={() => setCategoryModal({ open: false, mode: 'create' })}
-        onSuccess={() => { qc.invalidateQueries({ queryKey: ['categories'] }); setCategoryModal({ open: false, mode: 'create' }) }}
+        focusId={focusId}
+        onClose={() => { setCategoryModal({ open: false, mode: 'create' }); setFocusId(undefined) }}
+        onSuccess={() => { qc.invalidateQueries({ queryKey: ['categories'] }); setCategoryModal({ open: false, mode: 'create' }); setFocusId(undefined) }}
       />
     </>
   )
